@@ -584,6 +584,161 @@ function renderCategoriesPage(){
   refreshIcons();
 }
 
+/* =========================================================================
+   MARKDOWN  —  turns the "Full description" text into a professional,
+   README-style page (headings, bold, lists, tables, links, code, quotes).
+   Everything is HTML-escaped FIRST, so pasted text can never inject scripts.
+========================================================================= */
+function mdInline(text){
+  const stash = [];
+  const keep = (html)=>{ stash.push(html); return '\u0001'+(stash.length-1)+'\u0001'; };
+  let s = escapeHtml(text);
+
+  s = s.replace(/`([^`\n]+)`/g, (m,c)=> keep('<code>'+c+'</code>'));
+  s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (m,alt,url)=> keep('<img class="md-img" src="'+url+'" alt="'+alt+'" loading="lazy">'));
+  s = s.replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, (m,label,url)=> keep('<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+label+'</a>'));
+  s = s.replace(/(^|[\s(])(https?:\/\/[^\s<]+)/g, (m,pre,url)=>{
+    let trail = ''; const t = url.match(/[.,;:!?)]+$/);
+    if(t){ trail = t[0]; url = url.slice(0, -trail.length); }
+    return pre + keep('<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+url+'</a>') + trail;
+  });
+
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^\w])__([^_\n]+)__(?!\w)/g, '$1<strong>$2</strong>');
+  s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+  s = s.replace(/(^|[^\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');
+  s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+
+  return s.replace(/\u0001(\d+)\u0001/g, (m,i)=> stash[Number(i)]);
+}
+
+function mdSplitRow(line){
+  let t = line.trim();
+  if(t.startsWith('|')) t = t.slice(1);
+  if(t.endsWith('|')) t = t.slice(0,-1);
+  return t.split('|').map(c=>c.trim());
+}
+
+function mdListHtml(items){
+  let html = ''; const stack = [];
+  for(const it of items){
+    while(stack.length && it.indent < stack[stack.length-1].indent){ html += '</li></'+stack.pop().tag+'>'; }
+    const tag = it.ordered ? 'ol' : 'ul';
+    let top = stack[stack.length-1];
+    if(top && it.indent === top.indent){
+      html += '</li>';
+      if(top.tag !== tag){ html += '</'+stack.pop().tag+'>'; top = null; }
+    }
+    if(!top || it.indent > top.indent){ stack.push({ indent:it.indent, tag }); html += '<'+tag+'>'; }
+    let body = it.text; let cls = '';
+    const task = body.match(/^\[( |x|X)\]\s+(.*)$/);
+    if(task){ cls = ' class="md-task"'; body = (task[1]===' ' ? '<span class="md-box"></span>' : '<span class="md-box done">✓</span>') + mdInline(task[2]); }
+    else body = mdInline(body);
+    html += '<li'+cls+'>'+body;
+  }
+  while(stack.length) html += '</li></'+stack.pop().tag+'>';
+  return html;
+}
+
+function renderMarkdown(src, opts){
+  opts = opts || {};
+  src = String(src||'').replace(/\r\n?/g, '\n').replace(/\t/g, '  ');
+
+  if(opts.skipLeadingH1){
+    const norm = (x)=> String(x).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const m = src.match(/^\s*#\s+(.+?)\s*#*\s*(\n|$)/);
+    if(m && norm(m[1]).includes(norm(opts.skipLeadingH1))) src = src.slice(m[0].length);
+  }
+
+  const codeBlocks = [];
+  src = src.replace(/```[\w-]*\n([\s\S]*?)```/g, (m,code)=>{
+    codeBlocks.push('<pre class="md-pre"><code>'+escapeHtml(code.replace(/\n$/,''))+'</code></pre>');
+    return '\n\u0002'+(codeBlocks.length-1)+'\u0002\n';
+  });
+
+  const lines = src.split('\n');
+  const isHr = (l)=> /^\s*([-*_])(\s*\1){2,}\s*$/.test(l);
+  const isHeading = (l)=> /^#{1,6}\s+\S/.test(l);
+  const isQuote = (l)=> /^\s*>/.test(l);
+  const isList = (l)=> /^\s*([-*+]|\d+[.)])\s+\S/.test(l);
+  const isCode = (l)=> /^\u0002\d+\u0002$/.test(l.trim());
+  const isTableSep = (l)=> /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(l) && l.includes('-');
+  const startsBlock = (l, next)=> isHr(l) || isHeading(l) || isQuote(l) || isList(l) || isCode(l) || (l.includes('|') && next !== undefined && isTableSep(next));
+
+  const out = []; let i = 0;
+  while(i < lines.length){
+    const line = lines[i];
+    if(!line.trim()){ i++; continue; }
+
+    if(isCode(line)){ out.push(codeBlocks[Number(line.trim().replace(/\u0002/g,''))]); i++; continue; }
+
+    const h = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if(h){ const n = h[1].length; out.push('<h'+n+'>'+mdInline(h[2])+'</h'+n+'>'); i++; continue; }
+
+    if(isHr(line)){ out.push('<hr>'); i++; continue; }
+
+    if(isQuote(line)){
+      const buf = [];
+      while(i < lines.length && isQuote(lines[i])){ buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
+      out.push('<blockquote>'+renderMarkdown(buf.join('\n'))+'</blockquote>');
+      continue;
+    }
+
+    if(line.includes('|') && i+1 < lines.length && isTableSep(lines[i+1])){
+      const head = mdSplitRow(line);
+      const aligns = mdSplitRow(lines[i+1]).map(c=> c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : c.startsWith(':') ? 'left' : '');
+      i += 2; const rows = [];
+      while(i < lines.length && lines[i].trim() && lines[i].includes('|')){ rows.push(mdSplitRow(lines[i])); i++; }
+      const al = (k)=> aligns[k] ? ' style="text-align:'+aligns[k]+'"' : '';
+      out.push('<div class="md-table-wrap"><table><thead><tr>'+head.map((c,k)=>'<th'+al(k)+'>'+mdInline(c)+'</th>').join('')+'</tr></thead><tbody>'+
+        rows.map(r=>'<tr>'+head.map((_,k)=>'<td'+al(k)+'>'+mdInline(r[k]||'')+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>');
+      continue;
+    }
+
+    if(isList(line)){
+      const items = [];
+      while(i < lines.length){
+        const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+        if(m){ items.push({ indent:m[1].length, ordered:/\d/.test(m[2]), text:m[3] }); i++; }
+        else if(lines[i].trim() && /^\s+\S/.test(lines[i]) && items.length && !startsBlock(lines[i])){ items[items.length-1].text += ' '+lines[i].trim(); i++; }
+        else break;
+      }
+      out.push(mdListHtml(items));
+      continue;
+    }
+
+    const buf = [line]; i++;
+    while(i < lines.length && lines[i].trim() && !startsBlock(lines[i], lines[i+1])){ buf.push(lines[i]); i++; }
+    out.push('<p>'+buf.map(mdInline).join('<br>')+'</p>');
+  }
+  return out.join('\n');
+}
+
+/* A ready-made structure so a description looks professional from the first upload. */
+const DESCRIPTION_TEMPLATE = `## 🚀 About this project
+Write two or three lines here explaining what the project is and who it is for.
+
+## ✨ Key features
+- **Feature one** — a short explanation
+- **Feature two** — a short explanation
+- **Feature three** — a short explanation
+
+## 📱 Requirements
+| Item | Details |
+|---|---|
+| Platform | Android 7.0+ / Any modern browser |
+| Version | 1.0.0 |
+
+## 📥 How to install
+1. Download the file from this page
+2. Extract it (for ZIP files) or open it (for APK files)
+3. Follow the setup steps and enjoy
+
+> **Note:** Add any important tip or warning here.
+
+## 📩 Support
+Questions or feedback? Use the Contact page.`;
+
 function renderProjectDetail(slug){
   const p = DataStore.getProjectBySlug(slug);
   const content = qs('#project-detail-content');
@@ -596,7 +751,9 @@ function renderProjectDetail(slug){
         <div class="detail-hero" style="background:${categoryGradient(p.category)}">${thumbInnerHtml(p)}</div>
         <div class="eyebrow-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> ${escapeHtml(p.category)}</div>
         <h1 style="font-size:1.9rem;">${escapeHtml(p.name)}</h1>
-        <p style="color:var(--text-muted);margin-top:12px;line-height:1.7;max-width:65ch;">${escapeHtml(p.fullDesc||p.shortDesc||'')}</p>
+        ${p.fullDesc
+          ? `<article class="md-card"><div class="md-card-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM4 19a2 2 0 0 1 2-2h12"/></svg> About this project</div><div class="md-body">${renderMarkdown(p.fullDesc, { skipLeadingH1: p.name })}</div></article>`
+          : `<p class="md-plain">${escapeHtml(p.shortDesc||'')}</p>`}
         ${p.features && p.features.length ? `<h3 style="margin-top:28px;margin-bottom:6px;font-size:1.05rem;">What's included</h3><ul class="feature-list">${p.features.map(f=>`<li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> ${escapeHtml(f)}</li>`).join('')}</ul>` : ''}
       </div>
       <div class="sidebar-card">
@@ -753,7 +910,19 @@ function renderAdminAddProject(content, editId){
       </div>
       <div class="form-group" id="ap-new-cat-wrap" style="display:none;"><label for="ap-new-cat">New category name</label><input class="form-control" id="ap-new-cat" placeholder="e.g. WordPress Themes"></div>
       <div class="form-group"><label for="ap-short">Short description</label><input class="form-control" id="ap-short" placeholder="One line shown on the project card" value="${escapeHtml(v.shortDesc||'')}"></div>
-      <div class="form-group"><label for="ap-full">Full description</label><textarea class="form-control" id="ap-full" placeholder="Longer description shown on the project page">${escapeHtml(v.fullDesc||'')}</textarea></div>
+      <div class="form-group">
+        <div class="md-editor-top">
+          <label for="ap-full" style="margin:0;">Full description <span class="optional-tag">supports formatting</span></label>
+          <div class="md-tabs">
+            <button type="button" id="ap-tab-write" class="active">Write</button>
+            <button type="button" id="ap-tab-preview">Preview</button>
+            <button type="button" id="ap-template" title="Insert a ready-made professional layout">Use template</button>
+          </div>
+        </div>
+        <textarea class="form-control md-editor" id="ap-full" placeholder="## About this project&#10;Explain what it does…&#10;&#10;## Key features&#10;- **Fast** — loads instantly&#10;- **Simple** — easy to use">${escapeHtml(v.fullDesc||'')}</textarea>
+        <div class="md-body md-preview hidden" id="ap-full-preview"></div>
+        <div class="md-hint"><code># Heading</code> <code>## Subheading</code> <code>**bold**</code> <code>*italic*</code> <code>- list item</code> <code>1. numbered</code> <code>[text](https://link)</code> <code>&gt; note</code> <code>---</code></div>
+      </div>
       <div class="form-group"><label for="ap-features">What's included <span class="optional-tag">optional — one line per feature</span></label><textarea class="form-control" id="ap-features" placeholder="Full source code&#10;Setup instructions&#10;Free updates">${escapeHtml((v.features||[]).join('\n'))}</textarea></div>
 
       <div class="form-group">
@@ -801,6 +970,25 @@ function renderAdminAddProject(content, editId){
       </div>
     </div></div>`;
   refreshIcons();
+
+  /* ---- description editor: Write / Preview / Template ---- */
+  const fullBox = qs('#ap-full'), fullPrev = qs('#ap-full-preview');
+  const tabWrite = qs('#ap-tab-write'), tabPrev = qs('#ap-tab-preview');
+  function showDescTab(preview){
+    tabWrite.classList.toggle('active', !preview); tabPrev.classList.toggle('active', preview);
+    fullBox.classList.toggle('hidden', preview); fullPrev.classList.toggle('hidden', !preview);
+    if(preview){
+      const html = renderMarkdown(fullBox.value, { skipLeadingH1: qs('#ap-name').value.trim() });
+      fullPrev.innerHTML = html || '<p style="color:var(--text-muted)">Nothing to preview yet.</p>';
+    }
+  }
+  tabWrite.onclick = ()=> showDescTab(false);
+  tabPrev.onclick = ()=> showDescTab(true);
+  qs('#ap-template').onclick = ()=>{
+    const apply = ()=>{ fullBox.value = DESCRIPTION_TEMPLATE; showDescTab(false); fullBox.focus(); };
+    if(fullBox.value.trim()) confirmDialog('Replace the current description with the ready-made template?', apply, 'Replace');
+    else apply();
+  };
 
   const catSelect = qs('#ap-category');
   catSelect.onchange = ()=> qs('#ap-new-cat-wrap').style.display = catSelect.value==='__new__' ? 'flex' : 'none';
