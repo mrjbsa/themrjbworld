@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Mr JB World — Websites & Applications Marketplace</title>
+<meta name="description" content="Mr JB World — download ready-to-use websites and applications, or install apps straight from the browser. Free and premium projects, source code included.">
+<meta name="theme-color" content="#0B0E14">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234F7CFF'/%3E%3Ctext x='50' y='68' font-size='54' font-family='Arial' font-weight='800' fill='white' text-anchor='middle'%3EJB%3C/text%3E%3C/svg%3E">
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Icons -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
+<!-- Google Identity Services + Drive REST (used only in the hidden Admin area) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a href="#main-content" class="skip-link">Skip to content</a>
+
+<header id="site-header">
+  <div class="container header-inner">
+    <a href="#/home" class="logo" aria-label="Mr JB World home">
+      <span class="logo-mark">JB</span>
+      <span>Mr JB World<span class="logo-text-sub">Websites &amp; Applications</span></span>
+    </a>
+    <nav class="main-nav" id="main-nav" aria-label="Primary">
+      <a href="#/home" data-route="home">Home</a>
+      <a href="#/projects" data-route="projects">Projects</a>
+      <a href="#/categories" data-route="categories">Categories</a>
+      <a href="#/about" data-route="about">About</a>
+      <a href="#/contact" data-route="contact">Contact</a>
+    </nav>
+    <div class="header-actions">
+      <div class="header-search" role="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <label for="header-search-input" class="sr-only">Search projects</label>
+        <input id="header-search-input" type="search" placeholder="Search projects…" aria-label="Search projects">
+      </div>
+      <a class="icon-link" id="header-youtube-link" href="#" target="_blank" rel="noopener" aria-label="YouTube channel" title="YouTube channel">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.5V8.5L15.8 12Z"/></svg>
+      </a>
+      <button class="theme-toggle-track" id="theme-toggle" aria-label="Toggle dark mode" title="Toggle theme">
+        <span class="knob"><svg id="theme-icon" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg></span>
+      </button>
+      <button class="icon-btn hamburger-btn" id="hamburger-btn" aria-label="Open menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div id="mobile-menu" aria-hidden="true">
+  <div class="mobile-menu-overlay" data-close-menu></div>
+  <div class="mobile-menu-panel" role="dialog" aria-label="Mobile menu">
+    <div class="mobile-menu-header">
+      <span class="logo"><span class="logo-mark">JB</span> Mr JB World</span>
+      <button class="icon-btn" data-close-menu aria-label="Close menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="header-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="mobile-search-input" type="search" placeholder="Search projects…" aria-label="Search projects">
+    </div>
+    <a href="#/home" data-close-menu>Home</a>
+    <a href="#/projects" data-close-menu>Projects</a>
+    <a href="#/categories" data-close-menu>Categories</a>
+    <a href="#/about" data-close-menu>About</a>
+    <a href="#/contact" data-close-menu>Contact</a>
+  </div>
+</div>
+
+<main id="main-content">
+
+  <!-- HOME -->
+  <section class="page fade-page" id="page-home">
+    <div class="hero">
+      <div class="container hero-inner">
+        <div>
+          <div class="eyebrow-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg> Ready-to-run source code, not templates</div>
+          <h1>Download it. Run it. <span class="accent">Ship it.</span></h1>
+          <p class="lead" id="hero-lead">Mr JB World is a growing library of complete websites and applications — free ones download instantly, premium ones are one email away.</p>
+          <div class="hero-actions">
+            <a href="#/projects" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13m0 0 4-4m-4 4-4-4M4 20h16"/></svg> Browse projects</a>
+            <a href="#/categories" class="btn btn-secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> View categories</a>
+          </div>
+          <div class="hero-stats" id="hero-stats"></div>
+        </div>
+        <div class="terminal">
+          <div class="terminal-bar">
+            <span class="terminal-dot" style="background:#F87171"></span><span class="terminal-dot" style="background:#FBBF24"></span><span class="terminal-dot" style="background:#34D399"></span>
+          </div>
+          <div class="terminal-body" id="hero-terminal">
+            <div><span class="muted">$</span> <span class="accentline">mrjbworld</span> get portfolio-website</div>
+            <div class="muted">resolving project… found in Websites/</div>
+            <div class="ok">✓ download ready — no account needed</div>
+            <div>&nbsp;</div>
+            <div><span class="muted">$</span> <span class="accentline">mrjbworld</span> get fitness-tracker-app</div>
+            <div class="muted">this is a paid project</div>
+            <div class="ok">→ contact mrjbsa.official@outlook.com to purchase<span class="type-cursor"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container section">
+      <div class="section-head"><h2>Browse by category</h2><a href="#/categories" class="btn btn-ghost btn-sm">See all →</a></div>
+      <div class="folder-grid" id="home-categories"></div>
+    </div>
+
+    <div class="container section" style="padding-top:0;">
+      <div class="section-head"><h2>Latest projects</h2><a href="#/projects" class="btn btn-ghost btn-sm">See all →</a></div>
+      <div class="project-grid" id="home-projects"></div>
+    </div>
+  </section>
+
+  <!-- PROJECTS -->
+  <section class="page fade-page hidden" id="page-projects">
+    <div class="container section">
+      <div class="section-head"><h2 id="projects-title">All projects</h2><p id="projects-count"></p></div>
+      <div class="filters-bar" id="projects-filters"></div>
+      <div class="project-grid" id="projects-grid"></div>
+    </div>
+  </section>
+
+  <!-- CATEGORIES -->
+  <section class="page fade-page hidden" id="page-categories">
+    <div class="container section">
+      <div class="section-head"><h2>Categories</h2><p>Every upload is organized into its own category folder.</p></div>
+      <div class="folder-grid" id="categories-grid"></div>
+    </div>
+  </section>
+
+  <!-- PROJECT DETAIL -->
+  <section class="page fade-page hidden" id="page-project-detail">
+    <div class="container section" id="project-detail-content"></div>
+  </section>
+
+  <!-- ABOUT -->
+  <section class="page fade-page hidden" id="page-about">
+    <div class="container section">
+      <div class="section-head"><h2>About Mr JB World</h2></div>
+      <p style="max-width:70ch;color:var(--text-muted);line-height:1.7;margin-bottom:30px;">Mr JB World is a one-person marketplace for ready-to-use websites and applications. Every project is uploaded, categorized and maintained directly by Mr JB — free projects download instantly, and premium ones are handled personally over email so you always reach a real person.</p>
+      <div class="kpi-grid" id="about-stats"></div>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section class="page fade-page hidden" id="page-contact">
+    <div class="container section">
+      <div class="section-head"><h2>Contact</h2><p>Questions, custom work, or ready to buy a premium project — reach out directly.</p></div>
+      <div class="contact-grid">
+        <div class="card">
+          <div class="contact-tile" style="margin-bottom:20px;">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="m4 4 8 8 8-8"/></svg></div>
+            <div><b>Email</b><p style="margin:2px 0 0;color:var(--text-muted);font-size:.88rem;">The fastest way to reach Mr JB, especially for premium projects.</p><a href="#" id="contact-email-link" class="btn btn-primary btn-sm" style="margin-top:10px;"></a></div>
+          </div>
+          <div class="contact-tile">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.5V8.5L15.8 12Z"/></svg></div>
+            <div><b>YouTube</b><p style="margin:2px 0 0;color:var(--text-muted);font-size:.88rem;">Tutorials, project walkthroughs and updates.</p><a href="#" id="contact-youtube-link" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="margin-top:10px;">Visit channel</a></div>
+          </div>
+        </div>
+        <div class="card">
+          <b style="display:block;margin-bottom:6px;">How buying works</b>
+          <ul class="feature-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Free projects — click Download, no contact needed.</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Premium projects — click Contact to Purchase, email opens pre-filled.</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Mr JB replies with payment details and sends the file personally.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LEGAL -->
+  <section class="page fade-page hidden" id="page-legal">
+    <div class="container section" id="legal-content" style="max-width:760px;"></div>
+  </section>
+
+  <!-- ADMIN LOGIN / SETUP -->
+  <section class="page fade-page hidden" id="page-admin-login">
+    <div class="login-shell">
+      <div class="login-card">
+        <div class="logo"><span class="logo-mark">JB</span> Mr JB World</div>
+        <p class="login-sub" id="admin-login-sub">Admin access</p>
+        <form id="admin-setup-form" novalidate class="hidden">
+          <div class="info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg> No admin account exists yet on this browser. Create one now — choose your own username and password.</div>
+          <div class="form-group"><label for="setup-user">Username</label><input class="form-control" id="setup-user" autocomplete="username" required></div>
+          <div class="form-group"><label for="setup-pass">Password</label><input class="form-control" id="setup-pass" type="password" autocomplete="new-password" required></div>
+          <div class="form-group"><label for="setup-pass2">Confirm password</label><input class="form-control" id="setup-pass2" type="password" autocomplete="new-password" required></div>
+          <div class="form-error" id="admin-setup-error"></div>
+          <button class="btn btn-primary btn-block" type="submit" id="admin-setup-btn">Create admin account</button>
+        </form>
+        <form id="admin-login-form" novalidate>
+          <div class="form-group"><label for="login-user">Username</label><input class="form-control" id="login-user" autocomplete="username" required></div>
+          <div class="form-group"><label for="login-pass">Password</label><input class="form-control" id="login-pass" type="password" autocomplete="current-password" required></div>
+          <div class="form-error" id="admin-login-error">Incorrect username or password.</div>
+          <button class="btn btn-primary btn-block" type="submit" id="admin-login-btn">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADMIN DASHBOARD -->
+  <section class="page fade-page hidden" id="page-admin">
+    <div class="admin-shell">
+      <aside class="admin-sidebar" id="admin-sidebar">
+        <a href="#/admin/overview" data-tab="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h8v8H3zM13 3h8v5h-8zM13 12h8v9h-8zM3 15h8v6H3z"/></svg> Overview</a>
+        <a href="#/admin/projects" data-tab="projects"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M4 9h16"/></svg> Projects</a>
+        <a href="#/admin/add-project" data-tab="add-project"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Upload project</a>
+        <a href="#/admin/categories" data-tab="categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Categories</a>
+        <a href="#/admin/downloads" data-tab="downloads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13m0 0 4-4m-4 4-4-4M4 20h16"/></svg> Downloads</a>
+        <a href="#/admin/settings" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg> Settings</a>
+        <a href="#" id="admin-logout-link" style="margin-top:10px;color:var(--danger);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg> Log out</a>
+      </aside>
+      <div class="admin-main" id="admin-main-content"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer id="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="logo" style="margin-bottom:12px;"><span class="logo-mark">JB</span> Mr JB World</div>
+        <p>A one-person marketplace for ready-to-use websites and applications — free downloads, premium projects by request.</p>
+        <div class="footer-social">
+          <a class="icon-link" id="footer-youtube-link" href="#" target="_blank" rel="noopener" aria-label="YouTube"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.5V8.5L15.8 12Z"/></svg></a>
+          <a class="icon-link" id="footer-mail-link" href="#" aria-label="Email"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="m4 4 8 8 8-8"/></svg></a>
+        </div>
+      </div>
+      <div><h4>Explore</h4>
+        <a href="#/projects">All projects</a><a href="#/categories">Categories</a><a href="#/about">About</a>
+      </div>
+      <div><h4>Support</h4>
+        <a href="#/contact">Contact</a><a href="#/legal/privacy">Privacy policy</a><a href="#/legal/terms">Terms of use</a>
+      </div>
+      <div><h4>Contact</h4>
+        <p id="footer-email-text"></p>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span id="secret-trigger">© <span id="footer-year"></span> Mr JB World. All rights reserved.</span>
+      <span>Built for developers, by a developer.</span>
+    </div>
+  </div>
+</footer>
+
+<div id="toast-stack" aria-live="polite"></div>
+<div id="modal-root"></div>
+
+<script src="script.js" defer></script>
+</body>
+</html>
