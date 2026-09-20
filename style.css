@@ -81,9 +81,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 .header-search{ display:flex; align-items:center; gap:8px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-full); padding:8px 14px; width:220px; }
 .header-search svg{ width:16px; height:16px; color:var(--text-muted); flex-shrink:0; }
 .header-search input{ border:none; background:none; outline:none; color:var(--text); font-size:.85rem; width:100%; }
-.icon-link{ width:38px; height:38px; border-radius:var(--radius-full); display:flex; align-items:center; justify-content:center; background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); transition:color var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease); }
-.icon-link:hover{ color:var(--accent); border-color:var(--accent); }
-.icon-link svg{ width:17px; height:17px; }
+.icon-link{ width:38px; height:38px; border-radius:var(--radius-full); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); line-height:0; transition:color var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease),background var(--t-fast) var(--ease),transform var(--t-fast) var(--ease); }
+.icon-link:hover{ color:var(--accent); border-color:var(--accent); transform:translateY(-2px); }
+.icon-link svg{ width:18px; height:18px; display:block; }
+.icon-link.icon-youtube{ color:#FF0000; background:rgba(255,0,0,.1); border-color:rgba(255,0,0,.25); }
+.icon-link.icon-youtube:hover{ color:#FF0000; border-color:#FF0000; background:rgba(255,0,0,.16); }
+.icon-link.icon-mail{ color:var(--accent); background:var(--accent-soft); border-color:transparent; }
+.icon-link.icon-mail:hover{ color:var(--accent-hover); border-color:var(--accent); }
 .theme-toggle-track{ width:46px; height:26px; border-radius:var(--radius-full); background:var(--surface-2); border:1px solid var(--border); position:relative; cursor:pointer; padding:0; }
 .theme-toggle-track .knob{ position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; transition:transform var(--t-base) var(--ease); }
 .theme-toggle-track .knob svg{ width:12px; height:12px; color:#fff; }

@@ -37,6 +37,12 @@ function seedIfEmpty(){
     Object.keys(DEFAULT_SETTINGS).forEach(k=>{ if(s[k]===undefined){ s[k]=DEFAULT_SETTINGS[k]; changed=true; } });
     if(changed) localStorage.setItem(DB.SETTINGS, JSON.stringify(s));
   }
+  // Single fixed admin identity — seeded once, no public "create account" form ever exists.
+  // Default login: username "mrjb", password "ChangeMe#2026" — change it from
+  // Admin → Settings → Change Password the first time you sign in.
+  if(!localStorage.getItem(DB.ADMIN_CREDS)){
+    localStorage.setItem(DB.ADMIN_CREDS, JSON.stringify({ username:'mrjb', hash:'2e91ff8277625ff6780200952ef5609536d38e53a7016641958ac9873417fd83' }));
+  }
 }
 seedIfEmpty();
 
@@ -188,11 +194,14 @@ async function sha256(text){
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 const AuthService = {
-  hasAccount(){ return !!localStorage.getItem(DB.ADMIN_CREDS); },
-  async createAccount(username, password){
-    const hash = await sha256(password+'::'+username.toLowerCase());
+  async changePassword(currentPassword, newUsername, newPassword){
+    const creds = JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'null');
+    if(!creds) throw new Error('No admin account found.');
+    const currentHash = await sha256(currentPassword+'::'+creds.username.toLowerCase());
+    if(currentHash!==creds.hash) throw new Error('Current password is incorrect.');
+    const username = (newUsername||creds.username).trim() || creds.username;
+    const hash = await sha256(newPassword+'::'+username.toLowerCase());
     localStorage.setItem(DB.ADMIN_CREDS, JSON.stringify({ username, hash }));
-    sessionStorage.setItem(DB.ADMIN,'1');
   },
   async login(username, password){
     const creds = JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'null');
@@ -489,24 +498,9 @@ function renderLegalPage(slug){
    9. ADMIN LOGIN / SETUP
 ========================================================================= */
 function renderAdminLoginPage(){
-  const hasAccount = AuthService.hasAccount();
-  qs('#admin-setup-form').classList.toggle('hidden', hasAccount);
-  qs('#admin-login-form').classList.toggle('hidden', !hasAccount);
-  qs('#admin-login-sub').textContent = hasAccount ? 'Admin access — Mr JB World dashboard' : 'First-time setup';
   qs('#admin-login-error').style.display='none';
+  qs('#login-user').value=''; qs('#login-pass').value='';
 }
-qs('#admin-setup-form').addEventListener('submit', async e=>{
-  e.preventDefault();
-  const user = qs('#setup-user').value.trim(); const pass = qs('#setup-pass').value; const pass2 = qs('#setup-pass2').value;
-  const err = qs('#admin-setup-error');
-  if(user.length<3){ err.textContent='Username must be at least 3 characters.'; err.style.display='block'; return; }
-  if(pass.length<8){ err.textContent='Password must be at least 8 characters.'; err.style.display='block'; return; }
-  if(pass!==pass2){ err.textContent='Passwords do not match.'; err.style.display='block'; return; }
-  err.style.display='none';
-  await AuthService.createAccount(user, pass);
-  toast('Admin account created.', 'success');
-  location.hash = '#/admin/overview';
-});
 qs('#admin-login-form').addEventListener('submit', async e=>{
   e.preventDefault();
   const btn = qs('#admin-login-btn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Signing in…';
@@ -766,10 +760,39 @@ function renderAdminSettings(content){
     </div>
     <div class="admin-panel"><div class="admin-panel-header"><h3>Admin access</h3></div>
       <div class="admin-panel-body">
-        <p style="font-size:.85rem;color:var(--text-muted);">The "Admin" area has no visible link on the site. Reach it by opening <code>#/admin-login</code> directly, or by clicking the copyright text in the footer 5 times quickly.</p>
+        <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px;">The "Admin" area has no visible link on the site. Reach it by opening <code>#/admin-login</code> directly, or by clicking the copyright text in the footer 5 times quickly. There is no public sign-up — only this one account can ever log in.</p>
+        <div class="form-row">
+          <div class="form-group"><label for="s-new-username">Username</label><input class="form-control" id="s-new-username" value="${escapeHtml(JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'{}').username||'')}"></div>
+          <div class="form-group"><label for="s-current-pass">Current password</label><input class="form-control" id="s-current-pass" type="password" autocomplete="current-password"></div>
+        </div>
+        <div class="form-group"><label for="s-new-pass">New password (leave blank to keep current)</label><input class="form-control" id="s-new-pass" type="password" autocomplete="new-password"></div>
+        <button class="btn btn-primary" id="s-change-pass-btn">Update admin login</button>
+      </div>
+    </div>
+    <div class="admin-panel"><div class="admin-panel-header"><h3>Troubleshooting Google Drive "access_denied"</h3></div>
+      <div class="admin-panel-body">
+        <p style="font-size:.85rem;color:var(--text-muted);line-height:1.6;">This Google Cloud project is still in <b>Testing</b> mode, so Google only allows Google accounts that are explicitly added as test users to connect — that's expected, not a bug. One-time fix in Google Cloud Console:</p>
+        <ol style="font-size:.85rem;color:var(--text-muted);line-height:1.9;padding-left:18px;margin-top:8px;">
+          <li>Open <b>APIs & Services → OAuth consent screen</b>.</li>
+          <li>Scroll to <b>Test users</b> → Add users → enter your own Google account email.</li>
+          <li>Save, then try "Connect Google Drive" again with that same Google account.</li>
+        </ol>
+        <p style="font-size:.85rem;color:var(--text-muted);margin-top:10px;">(Publishing the app to "Production" later removes this limit, but requires Google's verification review — not needed for personal use.)</p>
       </div>
     </div>`;
   refreshIcons();
+  qs('#s-change-pass-btn').onclick = async ()=>{
+    const btn = qs('#s-change-pass-btn'); const newUser = qs('#s-new-username').value.trim(); const curPass = qs('#s-current-pass').value; const newPass = qs('#s-new-pass').value;
+    if(!curPass){ toast('Enter your current password.', 'error'); return; }
+    btn.disabled = true;
+    try{
+      const creds = JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'{}');
+      await AuthService.changePassword(curPass, newUser, newPass || curPass);
+      toast('Admin login updated.', 'success');
+      qs('#s-current-pass').value=''; qs('#s-new-pass').value='';
+    }catch(err){ toast(err.message, 'error'); }
+    btn.disabled = false;
+  };
   qs('#save-basic-settings').onclick = ()=>{
     const s = DataStore.getSettings();
     s.siteName = qs('#s-name').value.trim()||s.siteName;
