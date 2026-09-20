@@ -1,154 +1,100 @@
-# Mr JB World — Websites & Applications Marketplace
+# 🌐 The Mr JB World
 
-Live site: **https://mrjbsa.github.io/themrjbworld/**
-Contact: **mrjbsa.official@outlook.com**
-YouTube: **https://www.youtube.com/@themrjbworld**
+**The Mr JB World** is a digital platform created to discover, explore, download, and access different types of applications, websites, and digital projects — all in one place.
 
-A single-page, no-backend marketplace where Mr JB uploads ready-to-use websites and
-applications. Free projects download instantly; premium projects are bought by email.
-Project files live in Google Drive, project information lives in `projects.json`.
+The platform is designed with a **Play Store-style concept**, where users can browse available projects, check their information, and download or access the projects according to their availability.
 
----
+## 🚀 What is The Mr JB World?
 
-## Files in this repository
+The Mr JB World is a collection of digital projects created and shared for users, developers, students, creators, and anyone interested in useful applications and website projects.
 
-| File | What it is |
-|---|---|
-| `index.html` | The whole site (home, projects, categories, project detail, about, contact, legal, admin). |
-| `style.css` | All styling, light + dark theme. |
-| `script.js` | Routing, rendering, Google Drive upload, admin panel, publishing. |
-| `projects.json` | **The public database.** Everything visitors see comes from this file. |
-| `README.md` | This file. |
+The platform may include:
 
----
+- 📱 Applications
+- 🌐 Web Applications
+- 💻 Website Projects
+- 📦 Complete Website ZIP Files
+- 🛠️ HTML, CSS & JavaScript Projects
+- 🎓 Educational Projects
+- 🕌 Islamic Projects
+- ⚙️ Tools & Utilities
+- 🎨 Creative & Experimental Projects
+- 📁 Other Digital Projects
 
-## How the site works (important)
+## 🆓 Free Projects
 
-The admin panel saves your work in **localStorage**, which only exists inside *your own
-browser*. That is why, before this update, nobody else could see your uploads.
+Some applications and projects available on **The Mr JB World** are provided **free of charge**.
 
-Now there are two layers:
+Users can open the project listing, check the available information, and download the provided files when a download option is available.
 
-- **Draft** — what you build in the admin panel (stored in your browser).
-- **Live** — `projects.json` in this repository. Every visitor reads this file.
+## 💎 Paid Projects
 
-So the rule is simple:
+Some applications, websites, and complete projects may be available as **paid products**.
 
-> Upload → Save → **Publish to site** → upload `projects.json` to GitHub.
+For paid projects, please contact us using the email address below. We can provide information regarding the project's price, availability, features, and purchasing process.
 
-Until you upload `projects.json`, your change exists only on your device. While you are
-signed in as admin, the site shows your draft and warns you if it hasn't been published.
+📧 **Contact:** mrjbsa.official@outlook.com
 
----
+## 📦 Website ZIP Projects
 
-## Publishing a change (1 minute)
+Complete website projects may be provided as **ZIP folders**.
 
-1. Admin panel → **Publish to site**.
-2. Click **Download projects.json**.
-3. Open `github.com/mrjbsa/themrjbworld` → **Add file → Upload files**.
-4. Drop `projects.json` in the root folder (next to `index.html`) — GitHub will replace the old one.
-5. **Commit changes**, wait ~1 minute for GitHub Pages to rebuild.
-6. Open the site in a private/incognito window to confirm it is visible to everyone.
+Depending on the project, a ZIP package may contain:
 
-There is also **Load live file into draft**, which pulls the published file back into your
-browser — use it when you switch device or clear your browser data.
+- HTML files
+- CSS files
+- JavaScript files
+- Images
+- Assets
+- Configuration files
+- Other required project files
 
----
+Users can download the ZIP package and use the included files according to the project's provided instructions and license/usage terms.
 
-## Uploading a project
+## 📥 How to Use the Platform
 
-Admin panel → **Upload project**:
+1. Visit **The Mr JB World**.
+2. Browse the available applications and projects.
+3. Open a project to view its information.
+4. Check whether the project is free or requires contacting us.
+5. For free downloads, use the available download option.
+6. For paid projects, contact us through the provided email.
+7. Download or receive the project according to the available instructions.
 
-- **Project name, category, descriptions** — shown on the card and the detail page.
-- **What's included** — one feature per line (optional).
-- **Preview image / screenshot** — *optional*. Picked images are compressed
-  (max 900 px wide, JPEG) and stored inside `projects.json`.
-  If you don't add one, the site generates a clean device mock-up with the project's
-  initials instead of a plain icon.
-- **This is a mobile/desktop app** — shows the animated **Install** button instead of **Download**.
-- **Free project** — off means premium, so the card shows **Contact to buy** and opens a
-  pre-filled email to `mrjbsa.official@outlook.com`.
-- **Project file** — `.zip`, `.rar`, `.apk`, `.7z`. It is uploaded to *your* Google Drive,
-  into `Mr JB World Uploads / <category>`, made shareable, and the download link is saved.
+## 🌐 Live Website
 
-### Editing a project
-Admin → **Projects** → **Edit** on any row. Everything is editable, including the image
-(change or remove it). Leave the file box empty to keep the current file, or pick a new one
-to replace it — the old Drive file is deleted automatically.
+**The Mr JB World:**  
+[https://mrjbsa.github.io/themrjbworld/](https://mrjbsa.github.io/themrjbworld/?utm_source=chatgpt.com)
 
----
+## 📺 YouTube Channel
 
-## Admin access
+Follow **The Mr JB World** on YouTube for project demonstrations, tutorials, updates, and other content:
 
-There is no public sign-up and no visible link to the admin area.
+[The Mr JB World on YouTube](https://www.youtube.com/@themrjbworld?utm_source=chatgpt.com)
 
-- Open `https://mrjbsa.github.io/themrjbworld/#/admin-login`, or
-- click the footer copyright text **5 times quickly**.
+## 📧 Contact
 
-Default login: `mrjb` / `ChangeMe#2026` — change it immediately in
-**Settings → Admin access**. Credentials are stored as a SHA-256 hash in your browser only.
+For paid projects, business inquiries, project information, or other questions:
 
-> This is a static site, so admin login protects the panel from casual visitors, not from
-> someone reading the source. Never keep anything secret in the panel.
+**Email:** mrjbsa.official@outlook.com
 
----
+## ⚠️ Disclaimer
 
-## Google Drive setup (one time)
+The availability, features, pricing, download options, and usage terms of individual projects may vary.
 
-1. Google Cloud Console → create a project → **APIs & Services → Enable APIs → Google Drive API**.
-2. **OAuth consent screen** → External → add your own Gmail under **Test users**.
-3. **Credentials → Create credentials → OAuth client ID → Web application**.
-4. Under **Authorised JavaScript origins** add:
-   - `https://mrjbsa.github.io`
-   - `http://localhost:8000` (for local testing)
-5. Copy the Client ID into Admin → **Settings → Google Drive connection**.
+Please read the information provided with each project before downloading or using it. Projects may have their own requirements, licenses, or usage conditions.
 
-The site requests the `drive.file` scope only, so it can see just the files it creates —
-never the rest of your Drive. The connection lasts one browser session; you reconnect each
-time you come back to upload.
+## 🎯 Our Goal
 
-**"access_denied" when connecting?** Your Google Cloud project is still in *Testing* mode,
-so only accounts listed under **Test users** may connect. Add your account there and retry.
+The goal of **The Mr JB World** is to create a simple and organized platform where users can discover useful applications, websites, tools, and digital projects in one place.
+
+We aim to continuously add new projects and improve the platform over time.
 
 ---
 
-## Running locally
+### ⭐ The Mr JB World
 
-`fetch('projects.json')` does not work from `file://`, so use a tiny local server:
+**Discover • Explore • Download • Create**
 
-```bash
-cd themrjbworld
-python3 -m http.server 8000
-# open http://localhost:8000
-```
+📱 Applications | 🌐 Websites | 📦 ZIP Projects | 🛠️ Digital Tools
 
----
-
-## Known limits
-
-- **Download counts** are counted per visitor's browser and only become permanent numbers
-  when you publish a new `projects.json`. They are an indicator, not analytics.
-- **Image size**: each screenshot adds roughly 40–90 KB to `projects.json`. That is fine for
-  dozens of projects; if the file ever grows past a few MB, host the images in Drive instead.
-- **Large Drive files** (over ~100 MB) can still show Google's virus-scan warning page before
-  downloading. This is Google's behaviour, not the site's.
-- There is no server, so there is no payment automation — premium sales stay on email by design.
-
----
-
-## Changelog — what this update fixed
-
-1. **Projects are now visible to everyone.** The site reads a shared `projects.json`
-   instead of only the admin's localStorage, with a new **Publish to site** tab.
-2. **Optional preview image** per project, with compression, live preview and remove.
-3. **Better empty-state artwork** — auto-generated phone/browser mock-up with the project's
-   initials instead of a bare icon.
-4. **Full edit support** — edit or delete any project, including replacing its file or image.
-5. **Footer icons centred** — `.footer-grid a { display:block }` was overriding `.icon-link`.
-6. **More reliable Drive links** via `drive.usercontent.google.com`, which skips the old
-   interstitial for large `.zip` / `.apk` files.
-7. Admin gets a clear warning whenever the draft has not been published yet.
-
----
-
-© Mr JB World. Projects are provided as-is; please don't resell or redistribute without permission.
