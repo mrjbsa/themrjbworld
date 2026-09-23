@@ -4,7 +4,7 @@
 /* =========================================================================
    1. STORAGE KEYS & DEFAULTS
 ========================================================================= */
-const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', ADMIN:'mjbw_admin_session', ADMIN_CREDS:'mjbw_admin_creds', DRIVE_FOLDERS:'mjbw_drive_folders', THEME:'mjbw_theme' };
+const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', ADMIN:'mjbw_admin_session', ADMIN_CREDS:'mjbw_admin_creds', DRIVE_FOLDERS:'mjbw_drive_folders', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites' };
 
 const DEFAULT_CATEGORIES = ['Websites','Web Applications','Mobile Apps','Tools & Scripts','Other Projects'];
 
@@ -20,7 +20,6 @@ function categoryIcon(cat){ return CATEGORY_ICONS[cat] || 'folder'; }
 
 const DEFAULT_SETTINGS = {
   siteName:'Mr JB World',
-  siteUrl:'https://mrjbsa.github.io/themrjbworld/',
   contactEmail:'mrjbsa.official@outlook.com',
   youtubeUrl:'https://www.youtube.com/@themrjbworld',
   currency:'PKR',
@@ -31,6 +30,7 @@ const DEFAULT_SETTINGS = {
 function seedIfEmpty(){
   if(!localStorage.getItem(DB.PROJECTS)) localStorage.setItem(DB.PROJECTS, JSON.stringify([]));
   if(!localStorage.getItem(DB.CATEGORIES)) localStorage.setItem(DB.CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES));
+  if(!localStorage.getItem(DB.LIVE_SITES)) localStorage.setItem(DB.LIVE_SITES, JSON.stringify([]));
   if(!localStorage.getItem(DB.SETTINGS)) localStorage.setItem(DB.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
   else {
     const s = JSON.parse(localStorage.getItem(DB.SETTINGS));
@@ -50,90 +50,22 @@ seedIfEmpty();
 /* =========================================================================
    2. DATA STORE
 ========================================================================= */
-/* -------------------------------------------------------------------------
-   LIVE (PUBLIC) DATA  —  projects.json
-   This is the fix for "only I can see my uploads".
-   localStorage lives inside ONE browser, so nothing saved there can ever be
-   seen by a visitor. Every visitor now reads projects.json, which sits next
-   to index.html on the server (GitHub Pages). The admin works on a local
-   draft copy and publishes it from Admin -> "Publish to site".
-------------------------------------------------------------------------- */
-const PUBLIC_DATA_FILE = 'projects.json';
-const LiveData = { loaded:false, error:'', projects:[], categories:[], settings:null, generatedAt:'' };
-
-async function loadLiveData(){
-  try{
-    const res = await fetch(PUBLIC_DATA_FILE + '?v=' + Date.now(), { cache:'no-store' });
-    if(!res.ok) throw new Error('projects.json not found (HTTP '+res.status+')');
-    const data = await res.json();
-    LiveData.projects   = Array.isArray(data.projects) ? data.projects : [];
-    LiveData.categories = (Array.isArray(data.categories) && data.categories.length) ? data.categories : DEFAULT_CATEGORIES.slice();
-    LiveData.settings   = data.settings || null;
-    LiveData.generatedAt = data.generatedAt || '';
-    LiveData.loaded = true; LiveData.error = '';
-  }catch(e){
-    LiveData.loaded = false;
-    LiveData.error = e.message || String(e);
-  }
-}
-
-/* Visitors always see the published file. The admin (while signed in) sees
-   the local draft, so unpublished work is visible only to him. */
-function useLive(){ return LiveData.loaded && !AuthService.isLoggedIn(); }
-
 const DataStore = {
-  /* ---- raw local draft (admin working copy) ---- */
-  rawProjects(){ return JSON.parse(localStorage.getItem(DB.PROJECTS)||'[]'); },
-  rawCategories(){ return JSON.parse(localStorage.getItem(DB.CATEGORIES)||'[]'); },
-  rawSettings(){ return JSON.parse(localStorage.getItem(DB.SETTINGS)||'{}'); },
-  getLocalProjectById(id){ return this.rawProjects().find(p=>p.id===id)||null; },
-
-  /* ---- what the current viewer should see ---- */
-  getProjects(){ return useLive() ? LiveData.projects.slice() : this.rawProjects(); },
+  getProjects(){ return JSON.parse(localStorage.getItem(DB.PROJECTS)||'[]'); },
   getProjectBySlug(slug){ return this.getProjects().find(p=>p.slug===slug)||null; },
   getProjectById(id){ return this.getProjects().find(p=>p.id===id)||null; },
-  getCategories(){ return useLive() ? LiveData.categories.slice() : this.rawCategories(); },
-  getSettings(){
-    const local = this.rawSettings();
-    if(useLive() && LiveData.settings) return Object.assign({}, local, LiveData.settings);
-    return local;
-  },
-
-  /* ---- writes always go to the local draft ---- */
-  saveProject(project){ const all=this.rawProjects(); const idx=all.findIndex(p=>p.id===project.id); if(idx>-1) all[idx]=project; else all.unshift(project); localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); return project; },
-  deleteProject(id){ localStorage.setItem(DB.PROJECTS, JSON.stringify(this.rawProjects().filter(p=>p.id!==id))); },
-  incrementDownload(id){
-    if(useLive()){ const p = LiveData.projects.find(x=>x.id===id); if(p) p.downloadCount=(p.downloadCount||0)+1; return; }
-    const all=this.rawProjects(); const p=all.find(x=>x.id===id);
-    if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); }
-  },
+  saveProject(project){ const all=this.getProjects(); const idx=all.findIndex(p=>p.id===project.id); if(idx>-1) all[idx]=project; else all.unshift(project); localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); return project; },
+  deleteProject(id){ localStorage.setItem(DB.PROJECTS, JSON.stringify(this.getProjects().filter(p=>p.id!==id))); },
+  incrementDownload(id){ const all=this.getProjects(); const p=all.find(x=>x.id===id); if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); } },
+  getCategories(){ return JSON.parse(localStorage.getItem(DB.CATEGORIES)||'[]'); },
   saveCategories(cats){ localStorage.setItem(DB.CATEGORIES, JSON.stringify(cats)); },
+  getSettings(){ return JSON.parse(localStorage.getItem(DB.SETTINGS)||'{}'); },
   saveSettings(s){ localStorage.setItem(DB.SETTINGS, JSON.stringify(s)); },
   getDriveFolders(){ return JSON.parse(localStorage.getItem(DB.DRIVE_FOLDERS)||'{}'); },
   saveDriveFolders(map){ localStorage.setItem(DB.DRIVE_FOLDERS, JSON.stringify(map)); },
-
-  /* ---- publishing ---- */
-  buildPublishJson(){
-    const s = this.rawSettings();
-    return JSON.stringify({
-      generatedAt: new Date().toISOString(),
-      settings: { siteName:s.siteName, contactEmail:s.contactEmail, youtubeUrl:s.youtubeUrl, siteUrl:s.siteUrl },
-      categories: this.rawCategories(),
-      projects: this.rawProjects()
-    }, null, 2);
-  },
-  hasUnpublishedChanges(){
-    if(!LiveData.loaded) return this.rawProjects().length > 0;
-    const norm = (arr)=> JSON.stringify((arr||[]).map(p=>[p.id,p.name,p.category,p.slug,p.shortDesc,p.fullDesc,p.price,p.isFree,p.type,p.downloadUrl,p.image?1:0,p.version,p.requirements,p.technology,(p.features||[]).join('|')]));
-    return norm(this.rawProjects()) !== norm(LiveData.projects);
-  },
-  pullFromLive(){
-    if(!LiveData.loaded) return false;
-    localStorage.setItem(DB.PROJECTS, JSON.stringify(LiveData.projects));
-    const merged = Array.from(new Set(LiveData.categories.concat(this.rawCategories())));
-    localStorage.setItem(DB.CATEGORIES, JSON.stringify(merged));
-    return true;
-  }
+  getLiveSites(){ return JSON.parse(localStorage.getItem(DB.LIVE_SITES)||'[]'); },
+  saveLiveSite(site){ const all=this.getLiveSites(); const idx=all.findIndex(s=>s.id===site.id); if(idx>-1) all[idx]=site; else all.unshift(site); localStorage.setItem(DB.LIVE_SITES, JSON.stringify(all)); return site; },
+  deleteLiveSite(id){ localStorage.setItem(DB.LIVE_SITES, JSON.stringify(this.getLiveSites().filter(s=>s.id!==id))); }
 };
 
 /* =========================================================================
@@ -250,9 +182,7 @@ const DriveAPI = {
 
   async makePublic(fileId){
     await this.apiFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ role:'reader', type:'anyone' }) });
-    // drive.usercontent.google.com skips the "can't scan this file" interstitial
-    // that the old uc?export=download link shows for big .zip / .apk files.
-    return `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`;
+    return `https://drive.google.com/uc?export=download&id=${fileId}`;
   },
 
   async deleteFile(fileId){
@@ -314,42 +244,6 @@ function confirmDialog(message, onConfirm, confirmLabel){
   qs('#modal-cancel').onclick = ()=> root.innerHTML='';
   qs('#modal-confirm').onclick = ()=>{ root.innerHTML=''; onConfirm(); };
 }
-/* Shrink a picked screenshot so it can live inside projects.json
-   (max 900px wide, JPEG ~72% -> usually 40-90 KB). */
-function compressImage(file, maxW, quality){
-  maxW = maxW || 900; quality = quality || 0.72;
-  return new Promise((resolve, reject)=>{
-    if(!file.type || !file.type.startsWith('image/')){ reject(new Error('That file is not an image.')); return; }
-    const reader = new FileReader();
-    reader.onerror = ()=> reject(new Error('Could not read the image.'));
-    reader.onload = ()=>{
-      const img = new Image();
-      img.onerror = ()=> reject(new Error('Could not open the image.'));
-      img.onload = ()=>{
-        const scale = Math.min(1, maxW / img.width);
-        const w = Math.round(img.width*scale), h = Math.round(img.height*scale);
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,w,h);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function downloadTextFile(filename, text, mime){
-  const blob = new Blob([text], { type: mime || 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=> URL.revokeObjectURL(url), 2000);
-}
-
 function mailtoLink(project){
   const settings = DataStore.getSettings();
   const subject = encodeURIComponent('Purchase request: '+project.name);
@@ -401,41 +295,14 @@ function applyBrandingLinks(){
 /* =========================================================================
    7. PROJECT CARD RENDERING (with Download / Contact / Install logic)
 ========================================================================= */
-/* Initials used by the auto-generated preview */
-function projectInitials(name){
-  const words = String(name||'?').trim().split(/\s+/).filter(Boolean);
-  if(!words.length) return '?';
-  if(words.length===1) return words[0].slice(0,2).toUpperCase();
-  return (words[0][0]+words[1][0]).toUpperCase();
-}
-
-/* Thumbnail body: the admin's screenshot if there is one, otherwise a
-   device mock-up with the project's initials — much better than a bare icon. */
-function thumbInnerHtml(p){
-  if(p.image){
-    return `<img class="thumb-img" src="${p.image}" alt="${escapeHtml(p.name)} preview" loading="lazy">`;
-  }
-  const grad = categoryGradient(p.category);
-  const isApp = p.type==='app';
-  return `<div class="thumb-mock ${isApp?'mock-phone':'mock-browser'}">
-    <div class="mock-frame">
-      <div class="mock-bar"><i></i><i></i><i></i></div>
-      <div class="mock-body">
-        <span class="mock-initials" style="background:${grad}">${escapeHtml(projectInitials(p.name))}</span>
-        <span class="mock-name">${escapeHtml(p.name)}</span>
-        <span class="mock-lines"><span></span><span></span></span>
-      </div>
-    </div>
-  </div>`;
-}
-
 function projectCardHtml(p){
   const grad = categoryGradient(p.category);
+  const icon = p.type==='app' ? 'smartphone' : categoryIcon(p.category);
   return `<div class="project-card">
     <div class="project-thumb" style="background:${grad};">
-      ${thumbInnerHtml(p)}
       <span class="badge">${escapeHtml(p.category)}</span>
       <span class="badge-price ${p.isFree?'badge-free':'badge-paid'}">${p.isFree?'Free':formatPrice(p.price)}</span>
+      <svg data-lucide="${icon}"></svg>
     </div>
     <div class="project-body">
       <h3><a href="#/project/${p.slug}">${escapeHtml(p.name)}</a></h3>
@@ -496,7 +363,7 @@ function runInstallAnimation(btn){
     label.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Installed';
     DataStore.incrementDownload(p.id);
     const a = document.createElement('a'); a.href = p.downloadUrl; a.rel='noopener'; a.target='_blank'; document.body.appendChild(a); a.click(); a.remove();
-    toast('Download started — open the file on your device to finish installing.', 'success');
+    toast('Downloaded — open the file on your device to finish installing.', 'success');
     setTimeout(()=>{ btn.disabled=false; btn.dataset.busy=''; bar.style.width='0%'; label.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13m0 0 4-4m-4 4-4-4M4 20h16"/></svg> Install'; }, 2600);
   }, 1500);
 }
@@ -504,6 +371,30 @@ function runInstallAnimation(btn){
 /* =========================================================================
    8. PUBLIC PAGE RENDERERS
 ========================================================================= */
+function faviconUrl(url){
+  try{ const u = new URL(url); return `https://www.google.com/s2/favicons?sz=64&domain=${u.hostname}`; }catch(e){ return ''; }
+}
+function livesiteCardHtml(s){
+  const fav = faviconUrl(s.url);
+  return `<a class="livesite-card" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">
+    <div class="livesite-icon">${fav ? `<img src="${fav}" alt="" style="width:26px;height:26px;border-radius:6px;" onerror="this.remove()">` : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z"/></svg>'}</div>
+    <h3>${escapeHtml(s.name)}</h3>
+    <p>${escapeHtml(s.description||'')}</p>
+    <div class="livesite-url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg> ${escapeHtml(s.url.replace(/^https?:\/\//,''))}</div>
+    <span class="livesite-visit">Visit website <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
+  </a>`;
+}
+function renderLiveSitesSection(containerId, limit){
+  const sites = DataStore.getLiveSites();
+  const list = limit ? sites.slice(0, limit) : sites;
+  const el = qs('#'+containerId);
+  if(!el) return;
+  const section = el.closest('#home-live-sites-section');
+  if(section) section.classList.toggle('hidden', sites.length===0);
+  el.innerHTML = list.length ? list.map(livesiteCardHtml).join('') : emptyStateHtml('No live websites added yet', 'They will appear here as soon as they are added from the admin panel.');
+  refreshIcons();
+}
+
 function renderHome(){
   const settings = DataStore.getSettings();
   document.title = settings.siteName+' — Websites & Applications Marketplace';
@@ -525,21 +416,10 @@ function renderHome(){
 
   const latest = [...projects].sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt)).slice(0,6);
   qs('#home-projects').innerHTML = latest.length ? latest.map(projectCardHtml).join('') : emptyStateHtml('No projects yet', 'New projects will appear here as soon as they are uploaded.');
-  maybeShowDraftBanner();
+  renderLiveSitesSection('home-live-sites', 3);
   refreshIcons();
   wireActionButtons(qs('#home-projects'));
   applyBrandingLinks();
-}
-
-/* Reminder for the admin only: his draft is not the published file yet. */
-function maybeShowDraftBanner(){
-  const host = qs('#home-projects'); if(!host) return;
-  if(!AuthService.isLoggedIn() || !DataStore.hasUnpublishedChanges()) return;
-  const div = document.createElement('div');
-  div.className = 'draft-banner';
-  div.style.gridColumn = '1/-1';
-  div.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg><span>You are seeing your local draft. Visitors still see the published <b>projects.json</b> — open <a href="#/admin/publish" style="text-decoration:underline;">Publish to site</a> to make these changes public.</span>';
-  host.prepend(div);
 }
 
 function emptyStateHtml(title, sub){
@@ -572,6 +452,11 @@ function renderProjectsPage(params){
   wireActionButtons(qs('#projects-grid'));
 }
 
+function renderLiveSitesPage(){
+  document.title = 'Live Websites — '+DataStore.getSettings().siteName;
+  renderLiveSitesSection('live-sites-grid', 0);
+}
+
 function renderCategoriesPage(){
   document.title = 'Categories — '+DataStore.getSettings().siteName;
   const projects = DataStore.getProjects(); const cats = DataStore.getCategories();
@@ -584,161 +469,6 @@ function renderCategoriesPage(){
   refreshIcons();
 }
 
-/* =========================================================================
-   MARKDOWN  —  turns the "Full description" text into a professional,
-   README-style page (headings, bold, lists, tables, links, code, quotes).
-   Everything is HTML-escaped FIRST, so pasted text can never inject scripts.
-========================================================================= */
-function mdInline(text){
-  const stash = [];
-  const keep = (html)=>{ stash.push(html); return '\u0001'+(stash.length-1)+'\u0001'; };
-  let s = escapeHtml(text);
-
-  s = s.replace(/`([^`\n]+)`/g, (m,c)=> keep('<code>'+c+'</code>'));
-  s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (m,alt,url)=> keep('<img class="md-img" src="'+url+'" alt="'+alt+'" loading="lazy">'));
-  s = s.replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, (m,label,url)=> keep('<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+label+'</a>'));
-  s = s.replace(/(^|[\s(])(https?:\/\/[^\s<]+)/g, (m,pre,url)=>{
-    let trail = ''; const t = url.match(/[.,;:!?)]+$/);
-    if(t){ trail = t[0]; url = url.slice(0, -trail.length); }
-    return pre + keep('<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+url+'</a>') + trail;
-  });
-
-  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-  s = s.replace(/(^|[^\w])__([^_\n]+)__(?!\w)/g, '$1<strong>$2</strong>');
-  s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
-  s = s.replace(/(^|[^\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');
-  s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
-
-  return s.replace(/\u0001(\d+)\u0001/g, (m,i)=> stash[Number(i)]);
-}
-
-function mdSplitRow(line){
-  let t = line.trim();
-  if(t.startsWith('|')) t = t.slice(1);
-  if(t.endsWith('|')) t = t.slice(0,-1);
-  return t.split('|').map(c=>c.trim());
-}
-
-function mdListHtml(items){
-  let html = ''; const stack = [];
-  for(const it of items){
-    while(stack.length && it.indent < stack[stack.length-1].indent){ html += '</li></'+stack.pop().tag+'>'; }
-    const tag = it.ordered ? 'ol' : 'ul';
-    let top = stack[stack.length-1];
-    if(top && it.indent === top.indent){
-      html += '</li>';
-      if(top.tag !== tag){ html += '</'+stack.pop().tag+'>'; top = null; }
-    }
-    if(!top || it.indent > top.indent){ stack.push({ indent:it.indent, tag }); html += '<'+tag+'>'; }
-    let body = it.text; let cls = '';
-    const task = body.match(/^\[( |x|X)\]\s+(.*)$/);
-    if(task){ cls = ' class="md-task"'; body = (task[1]===' ' ? '<span class="md-box"></span>' : '<span class="md-box done">✓</span>') + mdInline(task[2]); }
-    else body = mdInline(body);
-    html += '<li'+cls+'>'+body;
-  }
-  while(stack.length) html += '</li></'+stack.pop().tag+'>';
-  return html;
-}
-
-function renderMarkdown(src, opts){
-  opts = opts || {};
-  src = String(src||'').replace(/\r\n?/g, '\n').replace(/\t/g, '  ');
-
-  if(opts.skipLeadingH1){
-    const norm = (x)=> String(x).toLowerCase().replace(/[^a-z0-9]+/g, '');
-    const m = src.match(/^\s*#\s+(.+?)\s*#*\s*(\n|$)/);
-    if(m && norm(m[1]).includes(norm(opts.skipLeadingH1))) src = src.slice(m[0].length);
-  }
-
-  const codeBlocks = [];
-  src = src.replace(/```[\w-]*\n([\s\S]*?)```/g, (m,code)=>{
-    codeBlocks.push('<pre class="md-pre"><code>'+escapeHtml(code.replace(/\n$/,''))+'</code></pre>');
-    return '\n\u0002'+(codeBlocks.length-1)+'\u0002\n';
-  });
-
-  const lines = src.split('\n');
-  const isHr = (l)=> /^\s*([-*_])(\s*\1){2,}\s*$/.test(l);
-  const isHeading = (l)=> /^#{1,6}\s+\S/.test(l);
-  const isQuote = (l)=> /^\s*>/.test(l);
-  const isList = (l)=> /^\s*([-*+]|\d+[.)])\s+\S/.test(l);
-  const isCode = (l)=> /^\u0002\d+\u0002$/.test(l.trim());
-  const isTableSep = (l)=> /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(l) && l.includes('-');
-  const startsBlock = (l, next)=> isHr(l) || isHeading(l) || isQuote(l) || isList(l) || isCode(l) || (l.includes('|') && next !== undefined && isTableSep(next));
-
-  const out = []; let i = 0;
-  while(i < lines.length){
-    const line = lines[i];
-    if(!line.trim()){ i++; continue; }
-
-    if(isCode(line)){ out.push(codeBlocks[Number(line.trim().replace(/\u0002/g,''))]); i++; continue; }
-
-    const h = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
-    if(h){ const n = h[1].length; out.push('<h'+n+'>'+mdInline(h[2])+'</h'+n+'>'); i++; continue; }
-
-    if(isHr(line)){ out.push('<hr>'); i++; continue; }
-
-    if(isQuote(line)){
-      const buf = [];
-      while(i < lines.length && isQuote(lines[i])){ buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
-      out.push('<blockquote>'+renderMarkdown(buf.join('\n'))+'</blockquote>');
-      continue;
-    }
-
-    if(line.includes('|') && i+1 < lines.length && isTableSep(lines[i+1])){
-      const head = mdSplitRow(line);
-      const aligns = mdSplitRow(lines[i+1]).map(c=> c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : c.startsWith(':') ? 'left' : '');
-      i += 2; const rows = [];
-      while(i < lines.length && lines[i].trim() && lines[i].includes('|')){ rows.push(mdSplitRow(lines[i])); i++; }
-      const al = (k)=> aligns[k] ? ' style="text-align:'+aligns[k]+'"' : '';
-      out.push('<div class="md-table-wrap"><table><thead><tr>'+head.map((c,k)=>'<th'+al(k)+'>'+mdInline(c)+'</th>').join('')+'</tr></thead><tbody>'+
-        rows.map(r=>'<tr>'+head.map((_,k)=>'<td'+al(k)+'>'+mdInline(r[k]||'')+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>');
-      continue;
-    }
-
-    if(isList(line)){
-      const items = [];
-      while(i < lines.length){
-        const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
-        if(m){ items.push({ indent:m[1].length, ordered:/\d/.test(m[2]), text:m[3] }); i++; }
-        else if(lines[i].trim() && /^\s+\S/.test(lines[i]) && items.length && !startsBlock(lines[i])){ items[items.length-1].text += ' '+lines[i].trim(); i++; }
-        else break;
-      }
-      out.push(mdListHtml(items));
-      continue;
-    }
-
-    const buf = [line]; i++;
-    while(i < lines.length && lines[i].trim() && !startsBlock(lines[i], lines[i+1])){ buf.push(lines[i]); i++; }
-    out.push('<p>'+buf.map(mdInline).join('<br>')+'</p>');
-  }
-  return out.join('\n');
-}
-
-/* A ready-made structure so a description looks professional from the first upload. */
-const DESCRIPTION_TEMPLATE = `## 🚀 About this project
-Write two or three lines here explaining what the project is and who it is for.
-
-## ✨ Key features
-- **Feature one** — a short explanation
-- **Feature two** — a short explanation
-- **Feature three** — a short explanation
-
-## 📱 Requirements
-| Item | Details |
-|---|---|
-| Platform | Android 7.0+ / Any modern browser |
-| Version | 1.0.0 |
-
-## 📥 How to install
-1. Download the file from this page
-2. Extract it (for ZIP files) or open it (for APK files)
-3. Follow the setup steps and enjoy
-
-> **Note:** Add any important tip or warning here.
-
-## 📩 Support
-Questions or feedback? Use the Contact page.`;
-
 function renderProjectDetail(slug){
   const p = DataStore.getProjectBySlug(slug);
   const content = qs('#project-detail-content');
@@ -748,12 +478,10 @@ function renderProjectDetail(slug){
     <a href="#/projects" class="btn btn-ghost btn-sm" style="margin-bottom:20px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m7-7-7 7 7 7"/></svg> Back to projects</a>
     <div class="detail-grid">
       <div>
-        <div class="detail-hero" style="background:${categoryGradient(p.category)}">${thumbInnerHtml(p)}</div>
+        <div class="detail-hero" style="background:${categoryGradient(p.category)}"><svg data-lucide="${p.type==='app'?'smartphone':categoryIcon(p.category)}"></svg></div>
         <div class="eyebrow-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> ${escapeHtml(p.category)}</div>
         <h1 style="font-size:1.9rem;">${escapeHtml(p.name)}</h1>
-        ${p.fullDesc
-          ? `<article class="md-card"><div class="md-card-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM4 19a2 2 0 0 1 2-2h12"/></svg> About this project</div><div class="md-body">${renderMarkdown(p.fullDesc, { skipLeadingH1: p.name })}</div></article>`
-          : `<p class="md-plain">${escapeHtml(p.shortDesc||'')}</p>`}
+        <p style="color:var(--text-muted);margin-top:12px;line-height:1.7;max-width:65ch;">${escapeHtml(p.fullDesc||p.shortDesc||'')}</p>
         ${p.features && p.features.length ? `<h3 style="margin-top:28px;margin-bottom:6px;font-size:1.05rem;">What's included</h3><ul class="feature-list">${p.features.map(f=>`<li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> ${escapeHtml(f)}</li>`).join('')}</ul>` : ''}
       </div>
       <div class="sidebar-card">
@@ -819,40 +547,35 @@ qs('#admin-logout-link').addEventListener('click', e=>{ e.preventDefault(); Auth
 /* =========================================================================
    10. ADMIN DASHBOARD
 ========================================================================= */
-const adminState = { tab:'overview', arg:null };
+const adminState = { tab:'overview' };
 
-function setActiveAdminNav(){
-  const highlight = adminState.tab==='edit' ? 'projects' : adminState.tab;
-  qsa('#admin-sidebar a[data-tab]').forEach(a=> a.classList.toggle('active', a.dataset.tab===highlight));
-}
+function setActiveAdminNav(){ qsa('#admin-sidebar a[data-tab]').forEach(a=> a.classList.toggle('active', a.dataset.tab===adminState.tab)); }
 
 function renderAdminDashboard(){
   document.title = 'Admin — '+DataStore.getSettings().siteName;
-  renderAdminTab(adminState.tab, adminState.arg);
+  renderAdminTab(adminState.tab);
   setActiveAdminNav();
 }
 
-function renderAdminTab(tab, arg){
+function renderAdminTab(tab){
   const content = qs('#admin-main-content');
   if(tab==='overview') renderAdminOverview(content);
   else if(tab==='projects') renderAdminProjects(content);
   else if(tab==='add-project') renderAdminAddProject(content);
-  else if(tab==='edit') renderAdminAddProject(content, arg);
-  else if(tab==='publish') renderAdminPublish(content);
   else if(tab==='categories') renderAdminCategories(content);
+  else if(tab==='live-sites') renderAdminLiveSites(content);
   else if(tab==='downloads') renderAdminDownloads(content);
   else if(tab==='settings') renderAdminSettings(content);
   else renderAdminOverview(content);
 }
 
 function renderAdminOverview(content){
-  const projects = DataStore.rawProjects();
+  const projects = DataStore.getProjects();
   const totalDownloads = projects.reduce((s,p)=>s+(p.downloadCount||0),0);
   const paid = projects.filter(p=>!p.isFree).length;
   const driveConnected = DriveAPI.isConnected();
   content.innerHTML = `
     <div class="admin-topline"><h2>Overview</h2><a href="#/admin/add-project" class="btn btn-primary btn-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Upload project</a></div>
-    ${DataStore.hasUnpublishedChanges() ? `<div class="draft-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg><span>You have changes that visitors cannot see yet. Open <a href="#/admin/publish" style="text-decoration:underline;">Publish to site</a> and upload the new <b>projects.json</b>.</span></div>` : ''}
     ${driveConnected ? '' : `<div class="warn-banner info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg> Google Drive isn't connected yet this session. Connect it from <a href="#/admin/settings" style="text-decoration:underline;">Settings</a> before uploading a new project.</div>`}
     <div class="kpi-grid">
       <div class="kpi-card"><svg data-lucide="folder"></svg><b>${projects.length}</b><span>Total projects</span></div>
@@ -867,93 +590,56 @@ function renderAdminOverview(content){
 }
 
 function renderAdminProjects(content){
-  const projects = DataStore.rawProjects();
+  const projects = DataStore.getProjects();
   content.innerHTML = `
     <div class="admin-topline"><h2>Projects</h2><a href="#/admin/add-project" class="btn btn-primary btn-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Upload project</a></div>
     <div class="admin-panel"><div class="admin-panel-body">
       ${projects.length ? `<div class="responsive-table"><table class="admin-table"><thead><tr><th>Project</th><th>Category</th><th>Price</th><th>Downloads</th><th></th></tr></thead><tbody>
         ${projects.map(p=>`<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${p.isFree?'Free':formatPrice(p.price)}</td><td>${(p.downloadCount||0).toLocaleString()}</td>
-        <td class="row-actions"><a class="btn btn-primary btn-sm" href="#/admin/edit/${p.id}">Edit</a><button class="btn btn-secondary btn-sm" data-view="${p.id}">View</button><button class="btn btn-danger btn-sm" data-del="${p.id}">Delete</button></td></tr>`).join('')}
+        <td class="row-actions"><button class="btn btn-secondary btn-sm" data-view="${p.id}">View</button><button class="btn btn-danger btn-sm" data-del="${p.id}">Delete</button></td></tr>`).join('')}
       </tbody></table></div>
-      <div class="admin-cards-mobile">${projects.map(p=>`<div class="admin-mobile-card"><div class="amc-row"><b>${escapeHtml(p.name)}</b><span>${p.isFree?'Free':formatPrice(p.price)}</span></div><div class="amc-row"><span>${escapeHtml(p.category)}</span><span>${(p.downloadCount||0)} dl</span></div><div class="row-actions" style="margin-top:8px;"><a class="btn btn-primary btn-sm" href="#/admin/edit/${p.id}">Edit</a><button class="btn btn-secondary btn-sm" data-view="${p.id}">View</button><button class="btn btn-danger btn-sm" data-del="${p.id}">Delete</button></div></div>`).join('')}</div>`
+      <div class="admin-cards-mobile">${projects.map(p=>`<div class="admin-mobile-card"><div class="amc-row"><b>${escapeHtml(p.name)}</b><span>${p.isFree?'Free':formatPrice(p.price)}</span></div><div class="amc-row"><span>${escapeHtml(p.category)}</span><span>${(p.downloadCount||0)} dl</span></div><div class="row-actions" style="margin-top:8px;"><button class="btn btn-secondary btn-sm" data-view="${p.id}">View</button><button class="btn btn-danger btn-sm" data-del="${p.id}">Delete</button></div></div>`).join('')}</div>`
       : emptyStateHtml('No projects yet', 'Upload your first project to see it here.')}
     </div></div>`;
   refreshIcons();
-  qsa('[data-view]', content).forEach(b=> b.onclick = ()=>{ const p=DataStore.getLocalProjectById(b.dataset.view); if(p) window.open('#/project/'+p.slug,'_blank'); });
+  qsa('[data-view]', content).forEach(b=> b.onclick = ()=>{ const p=DataStore.getProjectById(b.dataset.view); if(p) window.open('#/project/'+p.slug,'_blank'); });
   qsa('[data-del]', content).forEach(b=> b.onclick = ()=>{
-    const p = DataStore.getLocalProjectById(b.dataset.del);
+    const p = DataStore.getProjectById(b.dataset.del);
     confirmDialog(`Delete "${p.name}"? This removes it from the site (the file stays in your Google Drive).`, ()=>{
       DataStore.deleteProject(p.id); toast('Project deleted.', 'success'); renderAdminTab('projects');
     }, 'Delete');
   });
 }
 
-function renderAdminAddProject(content, editId){
-  const cats = DataStore.rawCategories();
-  const editing = editId ? DataStore.getLocalProjectById(editId) : null;
-  if(editId && !editing){
-    content.innerHTML = `<div class="admin-topline"><h2>Edit project</h2></div>` + emptyStateHtml('Project not found', 'It may have been deleted already.');
-    return;
-  }
-  const v = editing || {};
-  const sel = (c)=> (v.category===c ? ' selected' : '');
-
+function renderAdminAddProject(content){
+  const cats = DataStore.getCategories();
   content.innerHTML = `
-    <div class="admin-topline"><h2>${editing ? 'Edit project' : 'Upload a new project'}</h2>${editing ? '<a href="#/admin/projects" class="btn btn-ghost btn-sm">Back to projects</a>' : ''}</div>
-    <div class="info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg> ${editing ? 'Change anything you like. Leave the file box empty to keep the current file, or pick a new one to replace it.' : 'The file uploads straight to your own Google Drive (into a folder named after the category). This website only remembers the download link.'} After saving, go to <b>Publish to site</b> so visitors can see it.</div>
+    <div class="admin-topline"><h2>Upload a new project</h2></div>
+    <div class="info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg> The file you pick below uploads straight to your own Google Drive (into a folder named after the category). Nothing is stored on this website itself — it only remembers the download link.</div>
     <div class="admin-panel"><div class="admin-panel-body">
       <div class="form-row">
-        <div class="form-group"><label for="ap-name">Project name</label><input class="form-control" id="ap-name" placeholder="e.g. Portfolio Website" value="${escapeHtml(v.name||'')}"></div>
+        <div class="form-group"><label for="ap-name">Project name</label><input class="form-control" id="ap-name" placeholder="e.g. Portfolio Website"></div>
         <div class="form-group"><label for="ap-category">Category</label>
-          <select class="form-control" id="ap-category">${cats.map(c=>`<option value="${escapeHtml(c)}"${sel(c)}>${escapeHtml(c)}</option>`).join('')}<option value="__new__">+ New category…</option></select>
+          <select class="form-control" id="ap-category">${cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}<option value="__new__">+ New category…</option></select>
         </div>
       </div>
       <div class="form-group" id="ap-new-cat-wrap" style="display:none;"><label for="ap-new-cat">New category name</label><input class="form-control" id="ap-new-cat" placeholder="e.g. WordPress Themes"></div>
-      <div class="form-group"><label for="ap-short">Short description</label><input class="form-control" id="ap-short" placeholder="One line shown on the project card" value="${escapeHtml(v.shortDesc||'')}"></div>
-      <div class="form-group">
-        <div class="md-editor-top">
-          <label for="ap-full" style="margin:0;">Full description <span class="optional-tag">supports formatting</span></label>
-          <div class="md-tabs">
-            <button type="button" id="ap-tab-write" class="active">Write</button>
-            <button type="button" id="ap-tab-preview">Preview</button>
-            <button type="button" id="ap-template" title="Insert a ready-made professional layout">Use template</button>
-          </div>
-        </div>
-        <textarea class="form-control md-editor" id="ap-full" placeholder="## About this project&#10;Explain what it does…&#10;&#10;## Key features&#10;- **Fast** — loads instantly&#10;- **Simple** — easy to use">${escapeHtml(v.fullDesc||'')}</textarea>
-        <div class="md-body md-preview hidden" id="ap-full-preview"></div>
-        <div class="md-hint"><code># Heading</code> <code>## Subheading</code> <code>**bold**</code> <code>*italic*</code> <code>- list item</code> <code>1. numbered</code> <code>[text](https://link)</code> <code>&gt; note</code> <code>---</code></div>
-      </div>
-      <div class="form-group"><label for="ap-features">What's included <span class="optional-tag">optional — one line per feature</span></label><textarea class="form-control" id="ap-features" placeholder="Full source code&#10;Setup instructions&#10;Free updates">${escapeHtml((v.features||[]).join('\n'))}</textarea></div>
-
-      <div class="form-group">
-        <label>Preview image / screenshot <span class="optional-tag">optional — a nice mock-up is generated if you skip it</span></label>
-        <div class="image-picker">
-          <div class="dropzone" id="ap-img-dropzone">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h18v14H3z"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9.5" r="1.5"/></svg>
-            <div id="ap-img-label">Click to choose an image (PNG / JPG), or drag it here</div>
-          </div>
-          <input type="file" id="ap-img-input" class="hidden" accept="image/*">
-          <div class="image-preview${v.image?' show':''}" id="ap-img-preview">
-            <img id="ap-img-preview-el" src="${v.image||''}" alt="Preview">
-            <button type="button" id="ap-img-remove" title="Remove image">×</button>
-          </div>
-        </div>
-      </div>
-
+      <div class="form-group"><label for="ap-short">Short description</label><input class="form-control" id="ap-short" placeholder="One line shown on the project card"></div>
+      <div class="form-group"><label for="ap-full">Full description</label><textarea class="form-control" id="ap-full" placeholder="Longer description shown on the project page"></textarea></div>
       <div class="form-row">
-        <div class="form-group"><label for="ap-tech">Technology</label><input class="form-control" id="ap-tech" placeholder="e.g. React, Node.js" value="${escapeHtml(v.technology||'')}"></div>
-        <div class="form-group"><label for="ap-version">Version</label><input class="form-control" id="ap-version" value="${escapeHtml(v.version||'1.0.0')}"></div>
+        <div class="form-group"><label for="ap-tech">Technology</label><input class="form-control" id="ap-tech" placeholder="e.g. React, Node.js"></div>
+        <div class="form-group"><label for="ap-version">Version</label><input class="form-control" id="ap-version" value="1.0.0"></div>
       </div>
-      <div class="form-group"><label for="ap-requirements">Requirements</label><input class="form-control" id="ap-requirements" placeholder="e.g. Android 7+, PHP 8" value="${escapeHtml(v.requirements||'')}"></div>
-      <div class="toggle-row"><div><b>This is a mobile/desktop app</b><div style="font-size:.78rem;color:var(--text-muted);">Shows an Install-style button instead of a plain Download button</div></div><button type="button" class="switch${v.type==='app'?' on':''}" id="ap-is-app"><span class="knob"></span></button></div>
-      <div class="toggle-row"><div><b>Free project</b><div style="font-size:.78rem;color:var(--text-muted);">Off = premium (shows a Contact to Buy button instead of Download)</div></div><button type="button" class="switch${(editing && !v.isFree)?'':' on'}" id="ap-is-free"><span class="knob"></span></button></div>
-      <div class="form-group${(editing && !v.isFree)?'':' hidden'}" id="ap-price-wrap"><label for="ap-price">Price (PKR)</label><input class="form-control" id="ap-price" type="number" min="0" placeholder="e.g. 2500" value="${v.price||''}"></div>
+      <div class="form-group"><label for="ap-requirements">Requirements</label><input class="form-control" id="ap-requirements" placeholder="e.g. PHP 8+, MySQL"></div>
+      <div class="toggle-row"><div><b>This is a mobile/desktop app</b><div style="font-size:.78rem;color:var(--text-muted);">Shows an Install-style button instead of a plain Download button</div></div><button type="button" class="switch" id="ap-is-app"><span class="knob"></span></button></div>
+      <div class="toggle-row"><div><b>Free project</b><div style="font-size:.78rem;color:var(--text-muted);">Off = premium (shows a Contact to Buy button instead of Download)</div></div><button type="button" class="switch on" id="ap-is-free"><span class="knob"></span></button></div>
+      <div class="form-group hidden" id="ap-price-wrap"><label for="ap-price">Price (PKR)</label><input class="form-control" id="ap-price" type="number" min="0" placeholder="e.g. 2500"></div>
 
       <div class="form-group">
-        <label>Project file (.zip, .rar or .apk)${editing?' <span class="optional-tag">optional — only if you want to replace the current file</span>':''}</label>
+        <label>Project file (.zip, .rar or .apk)</label>
         <div class="dropzone" id="ap-dropzone">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
-          <div id="ap-file-label">${editing ? 'Current file: '+escapeHtml(v.fileSize||'—')+' — click to replace' : 'Click to choose a file, or drag it here'}</div>
+          <div id="ap-file-label">Click to choose a file, or drag it here</div>
         </div>
         <input type="file" id="ap-file-input" class="hidden" accept=".zip,.rar,.apk,.7z">
         <div class="upload-progress-track hidden" id="ap-progress-track"><div class="upload-progress-fill" id="ap-progress-fill"></div></div>
@@ -964,31 +650,11 @@ function renderAdminAddProject(content, editId){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         ${DriveAPI.isConnected() ? 'Google Drive connected ✓' : 'Connect Google Drive'}
       </button>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="ap-submit" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg> ${editing ? 'Save changes' : 'Upload & save'}</button>
-        ${editing ? `<button class="btn btn-danger" id="ap-delete" type="button">Delete project</button>` : ''}
+      <div>
+        <button class="btn btn-primary" id="ap-submit" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg> Upload & publish</button>
       </div>
     </div></div>`;
   refreshIcons();
-
-  /* ---- description editor: Write / Preview / Template ---- */
-  const fullBox = qs('#ap-full'), fullPrev = qs('#ap-full-preview');
-  const tabWrite = qs('#ap-tab-write'), tabPrev = qs('#ap-tab-preview');
-  function showDescTab(preview){
-    tabWrite.classList.toggle('active', !preview); tabPrev.classList.toggle('active', preview);
-    fullBox.classList.toggle('hidden', preview); fullPrev.classList.toggle('hidden', !preview);
-    if(preview){
-      const html = renderMarkdown(fullBox.value, { skipLeadingH1: qs('#ap-name').value.trim() });
-      fullPrev.innerHTML = html || '<p style="color:var(--text-muted)">Nothing to preview yet.</p>';
-    }
-  }
-  tabWrite.onclick = ()=> showDescTab(false);
-  tabPrev.onclick = ()=> showDescTab(true);
-  qs('#ap-template').onclick = ()=>{
-    const apply = ()=>{ fullBox.value = DESCRIPTION_TEMPLATE; showDescTab(false); fullBox.focus(); };
-    if(fullBox.value.trim()) confirmDialog('Replace the current description with the ready-made template?', apply, 'Replace');
-    else apply();
-  };
 
   const catSelect = qs('#ap-category');
   catSelect.onchange = ()=> qs('#ap-new-cat-wrap').style.display = catSelect.value==='__new__' ? 'flex' : 'none';
@@ -996,37 +662,12 @@ function renderAdminAddProject(content, editId){
   const isAppSwitch = qs('#ap-is-app'); isAppSwitch.onclick = ()=> isAppSwitch.classList.toggle('on');
   const isFreeSwitch = qs('#ap-is-free'); isFreeSwitch.onclick = ()=>{ isFreeSwitch.classList.toggle('on'); qs('#ap-price-wrap').classList.toggle('hidden', isFreeSwitch.classList.contains('on')); };
 
-  /* ---- project file ---- */
   let selectedFile = null;
   const dz = qs('#ap-dropzone'); const fileInput = qs('#ap-file-input');
-  const setFile = (f)=>{ selectedFile = f; qs('#ap-file-label').textContent = f.name+' ('+(f.size/1048576).toFixed(1)+' MB)'; };
   dz.onclick = ()=> fileInput.click();
-  fileInput.onchange = ()=>{ if(fileInput.files[0]) setFile(fileInput.files[0]); };
+  fileInput.onchange = ()=>{ if(fileInput.files[0]){ selectedFile = fileInput.files[0]; qs('#ap-file-label').textContent = selectedFile.name+' ('+(selectedFile.size/1048576).toFixed(1)+' MB)'; } };
   ['dragover','dragleave','drop'].forEach(evt=> dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.toggle('drag', evt==='dragover'); }));
-  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]){ fileInput.files = e.dataTransfer.files; setFile(e.dataTransfer.files[0]); } });
-
-  /* ---- optional preview image ---- */
-  let imageData = v.image || '';
-  const imgDz = qs('#ap-img-dropzone'); const imgInput = qs('#ap-img-input');
-  const imgPreview = qs('#ap-img-preview'); const imgEl = qs('#ap-img-preview-el');
-  async function useImage(file){
-    try{
-      qs('#ap-img-label').textContent = 'Processing image…';
-      imageData = await compressImage(file);
-      imgEl.src = imageData; imgPreview.classList.add('show');
-      const kb = Math.round(imageData.length*0.75/1024);
-      qs('#ap-img-label').textContent = file.name+' — added ('+kb+' KB after compression)';
-    }catch(err){ toast(err.message, 'error'); qs('#ap-img-label').textContent = 'Click to choose an image (PNG / JPG), or drag it here'; }
-  }
-  imgDz.onclick = ()=> imgInput.click();
-  imgInput.onchange = ()=>{ if(imgInput.files[0]) useImage(imgInput.files[0]); };
-  ['dragover','dragleave','drop'].forEach(evt=> imgDz.addEventListener(evt, e=>{ e.preventDefault(); imgDz.classList.toggle('drag', evt==='dragover'); }));
-  imgDz.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) useImage(e.dataTransfer.files[0]); });
-  qs('#ap-img-remove').onclick = ()=>{
-    imageData = ''; imgEl.src=''; imgPreview.classList.remove('show');
-    qs('#ap-img-label').textContent = 'Click to choose an image (PNG / JPG), or drag it here';
-    toast('Image removed — an auto preview will be used.', 'info');
-  };
+  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]){ selectedFile = e.dataTransfer.files[0]; fileInput.files = e.dataTransfer.files; qs('#ap-file-label').textContent = selectedFile.name+' ('+(selectedFile.size/1048576).toFixed(1)+' MB)'; } });
 
   qs('#ap-connect-drive').onclick = async (e)=>{
     const btn = e.currentTarget; btn.disabled=true; btn.innerHTML='<span class="spinner dark-sp"></span> Connecting…';
@@ -1035,137 +676,52 @@ function renderAdminAddProject(content, editId){
     btn.disabled=false;
   };
 
-  if(editing){
-    qs('#ap-delete').onclick = ()=> confirmDialog(`Delete "${editing.name}"? The file stays in your Google Drive.`, ()=>{
-      DataStore.deleteProject(editing.id); toast('Project deleted — remember to publish.', 'success'); location.hash = '#/admin/projects';
-    }, 'Delete');
-  }
-
   qs('#ap-submit').onclick = async ()=>{
     const name = qs('#ap-name').value.trim();
     let category = catSelect.value;
     const newCat = qs('#ap-new-cat').value.trim();
     if(category==='__new__'){ if(!newCat){ toast('Enter a name for the new category.', 'error'); return; } category = newCat; }
     if(!name){ toast('Enter a project name.', 'error'); return; }
-    if(!editing && !selectedFile){ toast('Choose a file to upload.', 'error'); return; }
+    if(!selectedFile){ toast('Choose a file to upload.', 'error'); return; }
 
     const isApp = isAppSwitch.classList.contains('on');
     const isFree = isFreeSwitch.classList.contains('on');
     const price = isFree ? 0 : Number(qs('#ap-price').value||0);
-    const features = qs('#ap-features').value.split('\n').map(s=>s.trim()).filter(Boolean);
 
-    const submitBtn = qs('#ap-submit'); const originalLabel = submitBtn.innerHTML;
-    submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner"></span> Working…';
+    const submitBtn = qs('#ap-submit'); submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner"></span> Working…';
     const progressTrack = qs('#ap-progress-track'); const progressFill = qs('#ap-progress-fill'); const progressText = qs('#ap-progress-text');
+    progressTrack.classList.remove('hidden');
 
     try{
-      if(!DataStore.rawCategories().includes(category)){
-        const cats2 = DataStore.rawCategories(); cats2.push(category); DataStore.saveCategories(cats2);
+      if(!DataStore.getCategories().includes(category)){
+        const cats2 = DataStore.getCategories(); cats2.push(category); DataStore.saveCategories(cats2);
       }
-
-      let downloadUrl = v.downloadUrl || '';
-      let driveFileId = v.driveFileId || '';
-      let fileSize = v.fileSize || '—';
-
-      if(selectedFile){
-        progressTrack.classList.remove('hidden');
-        progressText.textContent = 'Connecting to Google Drive…';
-        await DriveAPI.ensureToken();
-        progressText.textContent = 'Preparing category folder…';
-        const folderId = await DriveAPI.ensureCategoryFolder(category);
-        progressText.textContent = 'Uploading file…';
-        const uploaded = await DriveAPI.uploadFile(selectedFile, folderId, (pct)=>{ progressFill.style.width = pct+'%'; progressText.textContent = 'Uploading… '+pct+'%'; });
-        progressText.textContent = 'Finalizing download link…';
-        downloadUrl = await DriveAPI.makePublic(uploaded.id);
-        if(editing && driveFileId && driveFileId!==uploaded.id) await DriveAPI.deleteFile(driveFileId);
-        driveFileId = uploaded.id;
-        fileSize = (selectedFile.size/1048576).toFixed(1)+' MB';
-      }
+      progressText.textContent = 'Connecting to Google Drive…';
+      await DriveAPI.ensureToken();
+      progressText.textContent = 'Preparing category folder…';
+      const folderId = await DriveAPI.ensureCategoryFolder(category);
+      progressText.textContent = 'Uploading file…';
+      const uploaded = await DriveAPI.uploadFile(selectedFile, folderId, (pct)=>{ progressFill.style.width = pct+'%'; progressText.textContent = 'Uploading… '+pct+'%'; });
+      progressText.textContent = 'Finalizing download link…';
+      const downloadUrl = await DriveAPI.makePublic(uploaded.id);
 
       const project = {
-        id: editing ? editing.id : uid(),
-        slug: editing ? editing.slug : slugify(name)+'-'+Date.now().toString(36).slice(-4),
-        name, category,
+        id: uid(), slug: slugify(name)+'-'+Date.now().toString(36).slice(-4), name, category,
         shortDesc: qs('#ap-short').value.trim(), fullDesc: qs('#ap-full').value.trim(),
         technology: qs('#ap-tech').value.trim(), version: qs('#ap-version').value.trim()||'1.0.0',
-        requirements: qs('#ap-requirements').value.trim(), features,
-        image: imageData,
+        requirements: qs('#ap-requirements').value.trim(), features:[],
         isFree, price, type: isApp?'app':'website',
-        fileSize, driveFileId, downloadUrl,
-        createdAt: editing ? (editing.createdAt || new Date().toISOString()) : new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        downloadCount: editing ? (editing.downloadCount||0) : 0
+        fileSize: (selectedFile.size/1048576).toFixed(1)+' MB',
+        driveFileId: uploaded.id, downloadUrl,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), downloadCount:0
       };
       DataStore.saveProject(project);
-      toast(editing ? 'Changes saved — now publish to make them live.' : 'Project saved — now publish to make it live.', 'success');
-      location.hash = '#/admin/publish';
+      toast('Project uploaded and published.', 'success');
+      location.hash = '#/admin/projects';
     }catch(err){
-      toast(err.message || 'Something went wrong.', 'error');
-      submitBtn.disabled=false; submitBtn.innerHTML = originalLabel;
+      toast(err.message || 'Upload failed.', 'error');
+      submitBtn.disabled=false; submitBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg> Upload & publish';
     }
-  };
-}
-
-/* =========================================================================
-   PUBLISH TO SITE  —  turns the local draft into projects.json
-========================================================================= */
-function renderAdminPublish(content){
-  const localCount = DataStore.rawProjects().length;
-  const liveCount = LiveData.loaded ? LiveData.projects.length : 0;
-  const dirty = DataStore.hasUnpublishedChanges();
-  const s = DataStore.rawSettings();
-
-  content.innerHTML = `
-    <div class="admin-topline"><h2>Publish to site</h2></div>
-    <div class="info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg>
-      Everything you upload is saved in this browser first. Visitors can only see what is inside <code>projects.json</code> on the server — so after every change, download the file here and upload it to your GitHub repository.</div>
-
-    <div class="admin-panel"><div class="admin-panel-header"><h3>Status</h3></div>
-      <div class="admin-panel-body">
-        <div class="status-row">
-          <span class="provider-chip"><span class="dot ${LiveData.loaded?'active':'inactive'}"></span>${LiveData.loaded ? 'Live file found — '+liveCount+' project'+(liveCount===1?'':'s')+' public' : 'No projects.json on the server yet'}</span>
-          <span class="provider-chip"><span class="dot ${dirty?'inactive':'active'}"></span>${dirty ? 'You have unpublished changes' : 'Draft matches the live file'}</span>
-        </div>
-        <p style="font-size:.85rem;color:var(--text-muted);line-height:1.6;">Local draft: <b>${localCount}</b> project${localCount===1?'':'s'}${LiveData.loaded && LiveData.generatedAt ? ` · Live file published on <b>${formatDate(LiveData.generatedAt)}</b>` : ''}${LiveData.error ? ` · <span style="color:var(--danger)">${escapeHtml(LiveData.error)}</span>` : ''}</p>
-        <div class="btn-row">
-          <button class="btn btn-primary" id="pub-download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13m0 0 4-4m-4 4-4-4M4 20h16"/></svg> Download projects.json</button>
-          <button class="btn btn-secondary" id="pub-copy">Copy JSON</button>
-          <button class="btn btn-ghost" id="pub-pull">Load live file into draft</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="admin-panel"><div class="admin-panel-header"><h3>How to publish (one minute)</h3></div>
-      <div class="admin-panel-body">
-        <ol class="publish-steps">
-          <li>Click <b>Download projects.json</b> above.</li>
-          <li>Open your repository: <code>github.com/mrjbsa/themrjbworld</code>.</li>
-          <li>Click <b>Add file → Upload files</b> and drop <code>projects.json</code> in (same folder as <code>index.html</code>). If it already exists, GitHub replaces it.</li>
-          <li>Click <b>Commit changes</b>, wait about a minute for GitHub Pages to rebuild.</li>
-          <li>Open <a href="${escapeHtml(s.siteUrl||'https://mrjbsa.github.io/themrjbworld/')}" target="_blank" rel="noopener" style="text-decoration:underline;">your site</a> in a private window — the projects are now visible to everyone.</li>
-        </ol>
-      </div>
-    </div>
-
-    <div class="admin-panel"><div class="admin-panel-header"><h3>File preview</h3></div>
-      <div class="admin-panel-body">
-        <textarea class="json-box" id="pub-json" readonly spellcheck="false"></textarea>
-      </div>
-    </div>`;
-  refreshIcons();
-
-  const json = DataStore.buildPublishJson();
-  qs('#pub-json').value = json;
-  qs('#pub-download').onclick = ()=>{ downloadTextFile('projects.json', json); toast('projects.json downloaded — upload it to GitHub now.', 'success'); };
-  qs('#pub-copy').onclick = async ()=>{
-    try{ await navigator.clipboard.writeText(json); toast('JSON copied to clipboard.', 'success'); }
-    catch(e){ const box = qs('#pub-json'); box.select(); document.execCommand('copy'); toast('JSON copied.', 'success'); }
-  };
-  qs('#pub-pull').onclick = ()=>{
-    if(!LiveData.loaded){ toast('No live projects.json to load yet.', 'error'); return; }
-    confirmDialog('Replace your local draft with the published file? Any unpublished change will be lost.', ()=>{
-      DataStore.pullFromLive(); toast('Draft synced with the live file.', 'success'); renderAdminTab('publish');
-    }, 'Replace draft');
   };
 }
 
@@ -1201,8 +757,79 @@ function renderAdminCategories(content){
   });
 }
 
+let liveSiteEditingId = null;
+function renderAdminLiveSites(content){
+  const sites = DataStore.getLiveSites();
+  content.innerHTML = `
+    <div class="admin-topline"><h2>Live Websites</h2><p style="color:var(--text-muted);font-size:.85rem;">These show up on your homepage and on the public "Live Sites" page for every visitor.</p></div>
+    <div class="admin-panel"><div class="admin-panel-header"><h3 id="ls-form-title">Add a live website</h3></div>
+      <div class="admin-panel-body">
+        <input type="hidden" id="ls-id">
+        <div class="form-row">
+          <div class="form-group"><label for="ls-name">Website name</label><input class="form-control" id="ls-name" placeholder="e.g. My Portfolio"></div>
+          <div class="form-group"><label for="ls-url">Website URL</label><input class="form-control" id="ls-url" placeholder="https://example.com"></div>
+        </div>
+        <div class="form-group"><label for="ls-desc">Short description</label><textarea class="form-control" id="ls-desc" placeholder="One or two lines about this website"></textarea></div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-primary" id="ls-save-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Add website</button>
+          <button class="btn btn-secondary hidden" id="ls-cancel-btn" type="button">Cancel edit</button>
+        </div>
+      </div>
+    </div>
+    <div class="admin-panel"><div class="admin-panel-body">
+      ${sites.length ? `<div class="responsive-table"><table class="admin-table"><thead><tr><th>Name</th><th>URL</th><th></th></tr></thead><tbody>
+        ${sites.map(s=>`<tr><td>${escapeHtml(s.name)}</td><td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" style="color:var(--accent);">${escapeHtml(s.url.replace(/^https?:\/\//,''))}</a></td>
+        <td class="row-actions"><button class="btn btn-secondary btn-sm" data-edit-ls="${s.id}">Edit</button><button class="btn btn-danger btn-sm" data-del-ls="${s.id}">Delete</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="admin-cards-mobile">${sites.map(s=>`<div class="admin-mobile-card"><b>${escapeHtml(s.name)}</b><div class="amc-row"><span style="word-break:break-all;">${escapeHtml(s.url)}</span></div><div class="row-actions" style="margin-top:8px;"><button class="btn btn-secondary btn-sm" data-edit-ls="${s.id}">Edit</button><button class="btn btn-danger btn-sm" data-del-ls="${s.id}">Delete</button></div></div>`).join('')}</div>`
+      : emptyStateHtml('No live websites yet', 'Add your first one using the form above.')}
+    </div></div>`;
+  refreshIcons();
+  liveSiteEditingId = null;
+
+  function resetForm(){
+    liveSiteEditingId = null;
+    qs('#ls-id').value=''; qs('#ls-name').value=''; qs('#ls-url').value=''; qs('#ls-desc').value='';
+    qs('#ls-form-title').textContent='Add a live website';
+    qs('#ls-save-btn').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Add website';
+    qs('#ls-cancel-btn').classList.add('hidden');
+    refreshIcons();
+  }
+
+  qs('#ls-save-btn').onclick = ()=>{
+    const name = qs('#ls-name').value.trim();
+    let url = qs('#ls-url').value.trim();
+    const description = qs('#ls-desc').value.trim();
+    if(!name){ toast('Enter a website name.', 'error'); return; }
+    if(!url){ toast('Enter a website URL.', 'error'); return; }
+    if(!/^https?:\/\//i.test(url)) url = 'https://'+url;
+    try{ new URL(url); }catch(e){ toast('That URL doesn\'t look valid.', 'error'); return; }
+
+    const site = { id: liveSiteEditingId || uid(), name, url, description, createdAt: liveSiteEditingId ? (sites.find(s=>s.id===liveSiteEditingId)||{}).createdAt || new Date().toISOString() : new Date().toISOString() };
+    DataStore.saveLiveSite(site);
+    toast(liveSiteEditingId ? 'Website updated.' : 'Website added.', 'success');
+    renderAdminTab('live-sites');
+  };
+  qs('#ls-cancel-btn').onclick = resetForm;
+  qsa('[data-edit-ls]', content).forEach(b=> b.onclick = ()=>{
+    const s = sites.find(x=>x.id===b.dataset.editLs); if(!s) return;
+    liveSiteEditingId = s.id;
+    qs('#ls-id').value = s.id; qs('#ls-name').value = s.name; qs('#ls-url').value = s.url; qs('#ls-desc').value = s.description||'';
+    qs('#ls-form-title').textContent = 'Edit live website';
+    qs('#ls-save-btn').innerHTML = 'Save changes';
+    qs('#ls-cancel-btn').classList.remove('hidden');
+    qs('#ls-name').scrollIntoView({behavior:'smooth', block:'center'});
+  });
+  qsa('[data-del-ls]', content).forEach(b=> b.onclick = ()=>{
+    const s = sites.find(x=>x.id===b.dataset.delLs);
+    confirmDialog(`Remove "${s.name}" from your live websites?`, ()=>{
+      DataStore.deleteLiveSite(s.id); toast('Removed.', 'success'); renderAdminTab('live-sites');
+    }, 'Remove');
+  });
+}
+
 function renderAdminDownloads(content){
-  const sorted = [...DataStore.rawProjects()].sort((a,b)=>(b.downloadCount||0)-(a.downloadCount||0));
+  const sorted = [...DataStore.getProjects()].sort((a,b)=>(b.downloadCount||0)-(a.downloadCount||0));
   content.innerHTML = `<div class="admin-topline"><h2>Downloads</h2></div>
     <div class="admin-panel"><div class="admin-panel-body">
       ${sorted.length ? `<div class="responsive-table"><table class="admin-table"><thead><tr><th>Project</th><th>Type</th><th>Downloads</th></tr></thead><tbody>
@@ -1212,7 +839,7 @@ function renderAdminDownloads(content){
 }
 
 function renderAdminSettings(content){
-  const settings = DataStore.rawSettings();
+  const settings = DataStore.getSettings();
   content.innerHTML = `
     <div class="admin-topline"><h2>Settings</h2></div>
     <div class="admin-panel"><div class="admin-panel-header"><h3>Site details</h3></div>
@@ -1221,7 +848,6 @@ function renderAdminSettings(content){
           <div class="form-group"><label for="s-name">Website name</label><input class="form-control" id="s-name" value="${escapeHtml(settings.siteName)}"></div>
           <div class="form-group"><label for="s-email">Contact email</label><input class="form-control" id="s-email" value="${escapeHtml(settings.contactEmail)}"></div>
           <div class="form-group"><label for="s-youtube">YouTube channel URL</label><input class="form-control" id="s-youtube" value="${escapeHtml(settings.youtubeUrl)}"></div>
-          <div class="form-group"><label for="s-siteurl">Live website URL</label><input class="form-control" id="s-siteurl" value="${escapeHtml(settings.siteUrl||'')}"></div>
         </div>
         <button class="btn btn-primary" id="save-basic-settings">Save</button>
       </div>
@@ -1278,8 +904,7 @@ function renderAdminSettings(content){
     s.siteName = qs('#s-name').value.trim()||s.siteName;
     s.contactEmail = qs('#s-email').value.trim()||s.contactEmail;
     s.youtubeUrl = qs('#s-youtube').value.trim()||s.youtubeUrl;
-    s.siteUrl = qs('#s-siteurl').value.trim()||s.siteUrl;
-    DataStore.saveSettings(s); toast('Saved — publish again so visitors get the new details.', 'success'); applyBrandingLinks();
+    DataStore.saveSettings(s); toast('Saved.', 'success'); applyBrandingLinks();
   };
   qs('#save-drive-settings').onclick = ()=>{
     const s = DataStore.getSettings();
@@ -1296,7 +921,7 @@ function renderAdminSettings(content){
 /* =========================================================================
    11. ROUTER
 ========================================================================= */
-const PAGE_IDS = ['home','projects','categories','project-detail','about','contact','legal','admin-login','admin'];
+const PAGE_IDS = ['home','projects','categories','live-sites','project-detail','about','contact','legal','admin-login','admin'];
 function showPage(id){
   PAGE_IDS.forEach(p=>{ const node = qs('#page-'+p); if(!node) return; node.classList.toggle('hidden', p!==id); });
   const active = qs('#page-'+id);
@@ -1314,6 +939,7 @@ function router(){
   if(parts[0]==='' || parts[0]===undefined || parts[0]==='home'){ showPage('home'); renderHome(); }
   else if(parts[0]==='projects'){ showPage('projects'); renderProjectsPage(params); }
   else if(parts[0]==='categories'){ showPage('categories'); renderCategoriesPage(); }
+  else if(parts[0]==='live-sites'){ showPage('live-sites'); renderLiveSitesPage(); }
   else if(parts[0]==='project' && parts[1]){ showPage('project-detail'); renderProjectDetail(parts[1]); }
   else if(parts[0]==='about'){ showPage('about'); document.title='About — '+DataStore.getSettings().siteName; renderAboutStats(); }
   else if(parts[0]==='contact'){ showPage('contact'); document.title='Contact — '+DataStore.getSettings().siteName; initContactPage(); }
@@ -1321,35 +947,13 @@ function router(){
   else if(parts[0]==='admin-login'){ showPage('admin-login'); document.title='Admin — '+DataStore.getSettings().siteName; renderAdminLoginPage(); }
   else if(parts[0]==='admin'){
     if(!AuthService.isLoggedIn()){ location.hash='#/admin-login'; return; }
-    showPage('admin'); adminState.tab = parts[1]||'overview'; adminState.arg = parts[2]||null; renderAdminDashboard();
+    showPage('admin'); adminState.tab = parts[1]||'overview'; renderAdminDashboard();
   }
   else { showPage('home'); renderHome(); }
   applyBrandingLinks();
 }
 window.addEventListener('hashchange', router);
-
-let booted = false;
-async function boot(){
-  if(booted) return; booted = true;
-  const yearEl = qs('#footer-year'); if(yearEl) yearEl.textContent = new Date().getFullYear();
-
-  await loadLiveData();
-
-  if(LiveData.loaded){
-    // First time this browser opens the admin: start the draft from the live file.
-    if(DataStore.rawProjects().length === 0 && LiveData.projects.length) {
-      localStorage.setItem(DB.PROJECTS, JSON.stringify(LiveData.projects));
-    }
-    // Keep every category that exists either live or locally.
-    const merged = Array.from(new Set(LiveData.categories.concat(DataStore.rawCategories())));
-    DataStore.saveCategories(merged);
-  }
-
-  refreshIcons();
-  router();
-}
-
-if(document.readyState === 'loading') window.addEventListener('DOMContentLoaded', boot);
-else boot();
+window.addEventListener('DOMContentLoaded', ()=>{ qs('#footer-year').textContent = new Date().getFullYear(); refreshIcons(); router(); });
+if(document.readyState !== 'loading'){ qs('#footer-year').textContent = new Date().getFullYear(); router(); }
 
 })();
