@@ -210,6 +210,12 @@
           <div class="form-error" id="admin-login-error">Incorrect username or password.</div>
           <button class="btn btn-primary btn-block" type="submit" id="admin-login-btn">Sign in</button>
         </form>
+        <div id="admin-google-step" class="hidden">
+          <div class="info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg> Password correct. One more step — sign in with the authorized Google account to finish unlocking the dashboard.</div>
+          <div id="gsi-button-container" style="display:flex;justify-content:center;margin:6px 0 14px;"></div>
+          <p class="form-error" id="gsi-error" style="display:none;"></p>
+          <button class="btn btn-ghost btn-block btn-sm" type="button" id="gsi-back-btn">← Back</button>
+        </div>
       </div>
     </div>
   </section>

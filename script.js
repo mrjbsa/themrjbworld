@@ -24,7 +24,8 @@ const DEFAULT_SETTINGS = {
   youtubeUrl:'https://www.youtube.com/@themrjbworld',
   currency:'PKR',
   driveClientId:'669688636685-lm6fntdu1cm5h1r0adat5acfes2sm0gr.apps.googleusercontent.com',
-  driveRootFolderId:''
+  driveRootFolderId:'',
+  allowedAdminEmail:'mrjbsa.313@gmail.com'
 };
 
 function seedIfEmpty(){
@@ -211,9 +212,10 @@ const AuthService = {
     const creds = JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'null');
     if(!creds) return false;
     const hash = await sha256(password+'::'+username.toLowerCase());
-    if(creds.username.toLowerCase()===username.toLowerCase() && creds.hash===hash){ sessionStorage.setItem(DB.ADMIN,'1'); return true; }
+    if(creds.username.toLowerCase()===username.toLowerCase() && creds.hash===hash){ return true; }
     return false;
   },
+  grantSession(){ sessionStorage.setItem(DB.ADMIN,'1'); },
   isLoggedIn(){ return sessionStorage.getItem(DB.ADMIN)==='1'; },
   logout(){ sessionStorage.removeItem(DB.ADMIN); }
 };
@@ -374,15 +376,30 @@ function runInstallAnimation(btn){
 function faviconUrl(url){
   try{ const u = new URL(url); return `https://www.google.com/s2/favicons?sz=64&domain=${u.hostname}`; }catch(e){ return ''; }
 }
-function livesiteCardHtml(s){
+const LIVESITE_PALETTE = [ ['#FF5C7A','#FF9A76'], ['#6C5CE7','#A78BFA'], ['#00B4D8','#48CAE4'], ['#00C875','#5EEAD4'], ['#FFB020','#FFD166'], ['#FF6FB5','#FF9ECF'] ];
+function livesiteCardHtml(s, i){
   const fav = faviconUrl(s.url);
+  const [c1,c2] = LIVESITE_PALETTE[i % LIVESITE_PALETTE.length];
   return `<a class="livesite-card" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">
-    <div class="livesite-icon">${fav ? `<img src="${fav}" alt="" style="width:26px;height:26px;border-radius:6px;" onerror="this.remove()">` : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z"/></svg>'}</div>
+    <div class="livesite-icon" style="background:linear-gradient(135deg,${c1},${c2});box-shadow:0 10px 22px -8px ${c1}99;">
+      <span class="livesite-icon-inner">${fav ? `<img src="${fav}" alt="" style="width:26px;height:26px;border-radius:7px;" onerror="this.remove()">` : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z"/></svg>'}</span>
+    </div>
     <h3>${escapeHtml(s.name)}</h3>
     <p>${escapeHtml(s.description||'')}</p>
     <div class="livesite-url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg> ${escapeHtml(s.url.replace(/^https?:\/\//,''))}</div>
     <span class="livesite-visit">Visit website <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
   </a>`;
+}
+function attachTiltEffect(container){
+  qsa('.livesite-card', container).forEach(card=>{
+    card.addEventListener('mousemove', e=>{
+      const r = card.getBoundingClientRect();
+      const px = (e.clientX - r.left)/r.width - 0.5;
+      const py = (e.clientY - r.top)/r.height - 0.5;
+      card.style.transform = `perspective(900px) rotateY(${px*14}deg) rotateX(${-py*14}deg) translateY(-6px) scale(1.015)`;
+    });
+    card.addEventListener('mouseleave', ()=>{ card.style.transform=''; });
+  });
 }
 function renderLiveSitesSection(containerId, limit){
   const sites = DataStore.getLiveSites();
@@ -391,8 +408,9 @@ function renderLiveSitesSection(containerId, limit){
   if(!el) return;
   const section = el.closest('#home-live-sites-section');
   if(section) section.classList.toggle('hidden', sites.length===0);
-  el.innerHTML = list.length ? list.map(livesiteCardHtml).join('') : emptyStateHtml('No live websites added yet', 'They will appear here as soon as they are added from the admin panel.');
+  el.innerHTML = list.length ? list.map((s,i)=>livesiteCardHtml(s,i)).join('') : emptyStateHtml('No live websites added yet', 'They will appear here as soon as they are added from the admin panel.');
   refreshIcons();
+  attachTiltEffect(el);
 }
 
 function renderHome(){
@@ -534,13 +552,60 @@ function renderLegalPage(slug){
 function renderAdminLoginPage(){
   qs('#admin-login-error').style.display='none';
   qs('#login-user').value=''; qs('#login-pass').value='';
+  qs('#admin-login-form').classList.remove('hidden');
+  qs('#admin-google-step').classList.add('hidden');
+  qs('#gsi-error').style.display='none';
 }
+function decodeJwt(token){
+  const b64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+  const json = decodeURIComponent(atob(b64).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+  return JSON.parse(json);
+}
+function showGoogleVerifyStep(){
+  qs('#admin-login-form').classList.add('hidden');
+  qs('#admin-google-step').classList.remove('hidden');
+  const settings = DataStore.getSettings();
+  if(typeof google==='undefined' || !google.accounts || !google.accounts.id){
+    qs('#gsi-error').textContent = "Google sign-in script hasn't loaded — check your internet connection and refresh.";
+    qs('#gsi-error').style.display='block';
+    return;
+  }
+  if(!settings.driveClientId){
+    qs('#gsi-error').textContent = 'No Google Client ID is set in Settings yet.';
+    qs('#gsi-error').style.display='block';
+    return;
+  }
+  google.accounts.id.initialize({ client_id: settings.driveClientId, callback: handleGoogleCredential, auto_select:false });
+  google.accounts.id.renderButton(qs('#gsi-button-container'), { theme: document.documentElement.getAttribute('data-theme')==='dark'?'filled_black':'outline', size:'large', shape:'pill', text:'signin_with' });
+  google.accounts.id.prompt();
+}
+function handleGoogleCredential(response){
+  const err = qs('#gsi-error');
+  try{
+    const payload = decodeJwt(response.credential);
+    const allowed = (DataStore.getSettings().allowedAdminEmail||'').toLowerCase().trim();
+    if(payload.email && payload.email_verified && payload.email.toLowerCase()===allowed){
+      err.style.display='none';
+      AuthService.grantSession();
+      toast('Google account verified — welcome back.', 'success');
+      location.hash = '#/admin/overview';
+    }else{
+      err.textContent = `This Google account (${payload.email||'unknown'}) isn't authorized for admin access.`;
+      err.style.display='block';
+      if(google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+    }
+  }catch(e){ err.textContent = 'Could not verify the Google account. Please try again.'; err.style.display='block'; }
+}
+qs('#gsi-back-btn').addEventListener('click', ()=>{
+  qs('#admin-google-step').classList.add('hidden');
+  qs('#admin-login-form').classList.remove('hidden');
+});
 qs('#admin-login-form').addEventListener('submit', async e=>{
   e.preventDefault();
-  const btn = qs('#admin-login-btn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Signing in…';
+  const btn = qs('#admin-login-btn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Checking…';
   const ok = await AuthService.login(qs('#login-user').value.trim(), qs('#login-pass').value);
   btn.disabled=false; btn.innerHTML='Sign in';
-  if(ok){ location.hash = '#/admin/overview'; } else { qs('#admin-login-error').style.display='block'; }
+  if(ok){ qs('#admin-login-error').style.display='none'; showGoogleVerifyStep(); } else { qs('#admin-login-error').style.display='block'; }
 });
 qs('#admin-logout-link').addEventListener('click', e=>{ e.preventDefault(); AuthService.logout(); location.hash='#/home'; });
 
@@ -875,6 +940,13 @@ function renderAdminSettings(content){
         <button class="btn btn-primary" id="s-change-pass-btn">Update admin login</button>
       </div>
     </div>
+    <div class="admin-panel"><div class="admin-panel-header"><h3>Google account lock (2nd factor)</h3></div>
+      <div class="admin-panel-body">
+        <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px;">After the username/password step, the dashboard only unlocks if you also sign in with this exact Google account. Anyone without access to this Gmail inbox is blocked even if they somehow knew the password.</p>
+        <div class="form-group"><label for="s-admin-email">Authorized Gmail address</label><input class="form-control" id="s-admin-email" value="${escapeHtml(settings.allowedAdminEmail||'')}"></div>
+        <button class="btn btn-primary" id="save-admin-email-btn">Save authorized Gmail</button>
+      </div>
+    </div>
     <div class="admin-panel"><div class="admin-panel-header"><h3>Troubleshooting Google Drive "access_denied"</h3></div>
       <div class="admin-panel-body">
         <p style="font-size:.85rem;color:var(--text-muted);line-height:1.6;">This Google Cloud project is still in <b>Testing</b> mode, so Google only allows Google accounts that are explicitly added as test users to connect — that's expected, not a bug. One-time fix in Google Cloud Console:</p>
@@ -887,6 +959,13 @@ function renderAdminSettings(content){
       </div>
     </div>`;
   refreshIcons();
+  qs('#save-admin-email-btn').onclick = ()=>{
+    const s = DataStore.getSettings();
+    const val = qs('#s-admin-email').value.trim();
+    if(!val || !/^\S+@\S+\.\S+$/.test(val)){ toast('Enter a valid Gmail address.', 'error'); return; }
+    s.allowedAdminEmail = val; DataStore.saveSettings(s);
+    toast('Authorized Gmail updated.', 'success');
+  };
   qs('#s-change-pass-btn').onclick = async ()=>{
     const btn = qs('#s-change-pass-btn'); const newUser = qs('#s-new-username').value.trim(); const curPass = qs('#s-current-pass').value; const newPass = qs('#s-new-pass').value;
     if(!curPass){ toast('Enter your current password.', 'error'); return; }
