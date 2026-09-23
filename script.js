@@ -2,6 +2,19 @@
 'use strict';
 
 /* =========================================================================
+   0. CLOUD DATABASE — ONE-TIME SETUP
+   Without this, every uploaded project only shows up in YOUR OWN browser
+   (localStorage never leaves your device). To make projects visible to
+   every visitor on every device:
+     1. Log into Admin → connect Google Drive → upload/save one project.
+     2. Go to Admin → Settings → "Cloud Database" and copy the File ID shown.
+     3. Paste that ID below (between the quotes) and re-upload this script.js
+        to your hosting. From then on every visitor sees the same live data.
+========================================================================= */
+const CLOUD_DB_FILE_ID = ''; // <-- paste your Drive database File ID here after step 2
+const CLOUD_API_KEY = 'AIzaSyB5xb8ydiKRv0GCu73Hfyw7hPevmoAfeNs'; // public, read-only Drive API key
+
+/* =========================================================================
    1. STORAGE KEYS & DEFAULTS
 ========================================================================= */
 const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', ADMIN:'mjbw_admin_session', ADMIN_CREDS:'mjbw_admin_creds', DRIVE_FOLDERS:'mjbw_drive_folders', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites' };
@@ -55,18 +68,87 @@ const DataStore = {
   getProjects(){ return JSON.parse(localStorage.getItem(DB.PROJECTS)||'[]'); },
   getProjectBySlug(slug){ return this.getProjects().find(p=>p.slug===slug)||null; },
   getProjectById(id){ return this.getProjects().find(p=>p.id===id)||null; },
-  saveProject(project){ const all=this.getProjects(); const idx=all.findIndex(p=>p.id===project.id); if(idx>-1) all[idx]=project; else all.unshift(project); localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); return project; },
-  deleteProject(id){ localStorage.setItem(DB.PROJECTS, JSON.stringify(this.getProjects().filter(p=>p.id!==id))); },
-  incrementDownload(id){ const all=this.getProjects(); const p=all.find(x=>x.id===id); if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); } },
+  saveProject(project){ const all=this.getProjects(); const idx=all.findIndex(p=>p.id===project.id); if(idx>-1) all[idx]=project; else all.unshift(project); localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); CloudSync.schedulePush(); return project; },
+  deleteProject(id){ localStorage.setItem(DB.PROJECTS, JSON.stringify(this.getProjects().filter(p=>p.id!==id))); CloudSync.schedulePush(); },
+  incrementDownload(id){ const all=this.getProjects(); const p=all.find(x=>x.id===id); if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); CloudSync.schedulePush(); } },
   getCategories(){ return JSON.parse(localStorage.getItem(DB.CATEGORIES)||'[]'); },
-  saveCategories(cats){ localStorage.setItem(DB.CATEGORIES, JSON.stringify(cats)); },
+  saveCategories(cats){ localStorage.setItem(DB.CATEGORIES, JSON.stringify(cats)); CloudSync.schedulePush(); },
   getSettings(){ return JSON.parse(localStorage.getItem(DB.SETTINGS)||'{}'); },
   saveSettings(s){ localStorage.setItem(DB.SETTINGS, JSON.stringify(s)); },
   getDriveFolders(){ return JSON.parse(localStorage.getItem(DB.DRIVE_FOLDERS)||'{}'); },
   saveDriveFolders(map){ localStorage.setItem(DB.DRIVE_FOLDERS, JSON.stringify(map)); },
   getLiveSites(){ return JSON.parse(localStorage.getItem(DB.LIVE_SITES)||'[]'); },
-  saveLiveSite(site){ const all=this.getLiveSites(); const idx=all.findIndex(s=>s.id===site.id); if(idx>-1) all[idx]=site; else all.unshift(site); localStorage.setItem(DB.LIVE_SITES, JSON.stringify(all)); return site; },
-  deleteLiveSite(id){ localStorage.setItem(DB.LIVE_SITES, JSON.stringify(this.getLiveSites().filter(s=>s.id!==id))); }
+  saveLiveSite(site){ const all=this.getLiveSites(); const idx=all.findIndex(s=>s.id===site.id); if(idx>-1) all[idx]=site; else all.unshift(site); localStorage.setItem(DB.LIVE_SITES, JSON.stringify(all)); CloudSync.schedulePush(); return site; },
+  deleteLiveSite(id){ localStorage.setItem(DB.LIVE_SITES, JSON.stringify(this.getLiveSites().filter(s=>s.id!==id))); CloudSync.schedulePush(); }
+};
+
+/* =========================================================================
+   2b. CLOUD SYNC — Google Drive as the shared database
+   Every visitor's browser PULLS the shared JSON file (public, read-only,
+   via CLOUD_API_KEY — no login needed). Only the logged-in admin, once
+   Google Drive is connected, PUSHES updates back up after any save.
+========================================================================= */
+const CloudSync = {
+  _pushTimer: null,
+  getFileId(){ return CLOUD_DB_FILE_ID || (DataStore.getSettings().cloudFileId || ''); },
+
+  async pull(){
+    const fileId = this.getFileId();
+    if(!fileId || !CLOUD_API_KEY) return false;
+    try{
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${CLOUD_API_KEY}`, { cache:'no-store' });
+      if(!res.ok) return false;
+      const data = await res.json();
+      if(Array.isArray(data.projects)) localStorage.setItem(DB.PROJECTS, JSON.stringify(data.projects));
+      if(Array.isArray(data.categories) && data.categories.length) localStorage.setItem(DB.CATEGORIES, JSON.stringify(data.categories));
+      if(Array.isArray(data.liveSites)) localStorage.setItem(DB.LIVE_SITES, JSON.stringify(data.liveSites));
+      return true;
+    }catch(e){ console.warn('Cloud pull failed:', e); return false; }
+  },
+
+  schedulePush(){
+    if(typeof DriveAPI==='undefined' || !DriveAPI.isConnected()) return; // only an admin session with Drive connected pushes
+    clearTimeout(this._pushTimer);
+    this._pushTimer = setTimeout(()=>{ this.push().catch(e=>console.warn('Cloud push failed:', e)); }, 800);
+  },
+
+  async push(){
+    const payload = JSON.stringify({
+      projects: DataStore.getProjects(),
+      categories: DataStore.getCategories(),
+      liveSites: DataStore.getLiveSites(),
+      updatedAt: new Date().toISOString()
+    });
+    let fileId = this.getFileId();
+    const token = await DriveAPI.ensureToken();
+
+    if(fileId){
+      const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method:'PATCH',
+        headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+        body: payload
+      });
+      if(res.ok) return fileId;
+      fileId = ''; // file missing/inaccessible — recreate below
+    }
+
+    const rootId = await DriveAPI.ensureRootFolder();
+    const boundary = 'mjbwdb-'+Math.random().toString(36).slice(2);
+    const metadata = { name:'mjbw_database.json', parents:[rootId], mimeType:'application/json' };
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${payload}\r\n--${boundary}--`;
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'multipart/related; boundary='+boundary },
+      body
+    });
+    if(!res.ok) throw new Error('Cloud database save failed.');
+    const data = await res.json();
+    await DriveAPI.makePublic(data.id);
+    const settings = DataStore.getSettings();
+    settings.cloudFileId = data.id;
+    DataStore.saveSettings(settings);
+    return data.id;
+  }
 };
 
 /* =========================================================================
@@ -929,6 +1011,16 @@ function renderAdminSettings(content){
         <button class="btn btn-primary" id="save-drive-settings" style="margin-top:14px;">Save Client ID</button>
       </div>
     </div>
+    <div class="admin-panel"><div class="admin-panel-header"><h3>Cloud Database (makes uploads visible to every visitor)</h3></div>
+      <div class="admin-panel-body">
+        <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px;">By default a browser's data stays on that one device. Once you connect Drive and save/upload anything, a shared <code>mjbw_database.json</code> file is created in your Drive and its ID appears below.</p>
+        ${CLOUD_DB_FILE_ID
+          ? `<div class="info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Cloud database is live and hardcoded — every visitor sees the same data.</div>`
+          : `<div class="form-group"><label>Current File ID${CloudSync.getFileId()?'':' (not created yet — save a project or category first)'}</label>
+             <div style="display:flex;gap:8px;"><input class="form-control" id="s-cloud-id" value="${escapeHtml(CloudSync.getFileId())}" readonly><button class="btn btn-secondary btn-sm" id="s-copy-cloud-id">Copy</button></div></div>
+             <div class="info-banner" style="margin-top:10px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01"/></svg> ${CloudSync.getFileId() ? 'One-time step: copy this ID into the <code>CLOUD_DB_FILE_ID</code> constant near the top of script.js, then re-upload script.js to your hosting. After that, every visitor on every device will see your live projects and can download them — no login needed.' : 'This box fills in automatically the first time you add/edit a project, category, or live site while Drive is connected above.'}</div>`}
+      </div>
+    </div>
     <div class="admin-panel"><div class="admin-panel-header"><h3>Admin access</h3></div>
       <div class="admin-panel-body">
         <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px;">The "Admin" area has no visible link on the site. Reach it by opening <code>#/admin-login</code> directly, or by clicking the copyright text in the footer 5 times quickly. There is no public sign-up — only this one account can ever log in.</p>
@@ -990,6 +1082,13 @@ function renderAdminSettings(content){
     s.driveClientId = qs('#s-client-id').value.trim();
     DataStore.saveSettings(s); toast('Client ID saved.', 'success');
   };
+  if(qs('#s-copy-cloud-id')){
+    qs('#s-copy-cloud-id').onclick = ()=>{
+      const val = qs('#s-cloud-id').value;
+      if(!val){ toast('No File ID yet — save a project first.', 'error'); return; }
+      navigator.clipboard.writeText(val).then(()=> toast('File ID copied.', 'success')).catch(()=> toast('Could not copy — select and copy manually.', 'error'));
+    };
+  }
   qs('#s-connect-drive').onclick = async (e)=>{
     const btn = e.currentTarget; btn.disabled=true; btn.textContent='Connecting…';
     try{ await DriveAPI.connect(); toast('Google Drive connected.', 'success'); renderAdminTab('settings'); }
@@ -1032,7 +1131,13 @@ function router(){
   applyBrandingLinks();
 }
 window.addEventListener('hashchange', router);
-window.addEventListener('DOMContentLoaded', ()=>{ qs('#footer-year').textContent = new Date().getFullYear(); refreshIcons(); router(); });
-if(document.readyState !== 'loading'){ qs('#footer-year').textContent = new Date().getFullYear(); router(); }
+async function boot(){
+  qs('#footer-year').textContent = new Date().getFullYear();
+  refreshIcons();
+  await CloudSync.pull(); // fetch the shared Drive database before first render
+  router();
+}
+window.addEventListener('DOMContentLoaded', boot);
+if(document.readyState !== 'loading'){ boot(); }
 
 })();
