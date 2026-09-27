@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Mr JB World — Websites & Applications Marketplace</title>
-<meta name="description" content="Mr JB World — download ready-to-use websites and applications, or install apps straight from the browser. Free and premium projects, source code included.">
-<meta name="theme-color" content="#0B0E14">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234F7CFF'/%3E%3Ctext x='50' y='68' font-size='54' font-family='Arial' font-weight='800' fill='white' text-anchor='middle'%3EJB%3C/text%3E%3C/svg%3E">
+<title>The Mr JB World — Websites & Applications Marketplace</title>
+<meta name="description" content="The Mr JB World — download ready-to-use websites and applications, or install apps straight from the browser. Free and premium projects, source code included.">
+<meta name="theme-color" content="#1C140F">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%233654FF'/%3E%3Ctext x='50' y='68' font-size='52' font-family='Arial' font-weight='800' fill='white' text-anchor='middle'%3EJB%3C/text%3E%3C/svg%3E">
 
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
 <!-- Icons -->
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
@@ -25,9 +25,9 @@
 
 <header id="site-header">
   <div class="container header-inner">
-    <a href="#/home" class="logo" aria-label="Mr JB World home">
+    <a href="#/home" class="logo" aria-label="The Mr JB World home">
       <span class="logo-mark">JB</span>
-      <span>Mr JB World<span class="logo-text-sub">Websites &amp; Applications</span></span>
+      <span>The Mr JB World<span class="logo-text-sub">Websites &amp; Applications</span></span>
     </a>
     <nav class="main-nav" id="main-nav" aria-label="Primary">
       <a href="#/home" data-route="home">Home</a>
@@ -60,7 +60,7 @@
   <div class="mobile-menu-overlay" data-close-menu></div>
   <div class="mobile-menu-panel" role="dialog" aria-label="Mobile menu">
     <div class="mobile-menu-header">
-      <span class="logo"><span class="logo-mark">JB</span> Mr JB World</span>
+      <span class="logo"><span class="logo-mark">JB</span> The Mr JB World</span>
       <button class="icon-btn" data-close-menu aria-label="Close menu">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
@@ -87,7 +87,7 @@
         <div>
           <div class="eyebrow-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg> Ready-to-run source code, not templates</div>
           <h1>Download it. Run it. <span class="accent">Ship it.</span></h1>
-          <p class="lead" id="hero-lead">Mr JB World is a growing library of complete websites and applications — free ones download instantly, premium ones are one email away.</p>
+          <p class="lead" id="hero-lead">The Mr JB World is a growing library of complete websites and applications — free ones download instantly, premium ones are one email away.</p>
           <div class="hero-actions">
             <a href="#/projects" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13m0 0 4-4m-4 4-4-4M4 20h16"/></svg> Browse projects</a>
             <a href="#/categories" class="btn btn-secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> View categories</a>
@@ -111,18 +111,23 @@
       </div>
     </div>
 
+    <div class="container section hidden" id="home-preview-section" style="padding-top:0;">
+      <div class="section-head"><div><span class="eyebrow-label">See it in action</span><h2>Live project previews</h2></div></div>
+      <div id="home-preview-slider"></div>
+    </div>
+
     <div class="container section">
-      <div class="section-head"><h2>Browse by category</h2><a href="#/categories" class="btn btn-ghost btn-sm">See all →</a></div>
+      <div class="section-head"><div><span class="eyebrow-label">Explore</span><h2>Browse by category</h2></div><a href="#/categories" class="btn btn-ghost btn-sm">See all →</a></div>
       <div class="folder-grid" id="home-categories"></div>
     </div>
 
     <div class="container section" style="padding-top:0;" id="home-live-sites-section">
-      <div class="section-head"><h2>My live websites</h2><a href="#/live-sites" class="btn btn-ghost btn-sm">See all →</a></div>
+      <div class="section-head"><div><span class="eyebrow-label">Portfolio</span><h2>My live websites</h2></div><a href="#/live-sites" class="btn btn-ghost btn-sm">See all →</a></div>
       <div class="livesite-grid" id="home-live-sites"></div>
     </div>
 
     <div class="container section" style="padding-top:0;">
-      <div class="section-head"><h2>Latest projects</h2><a href="#/projects" class="btn btn-ghost btn-sm">See all →</a></div>
+      <div class="section-head"><div><span class="eyebrow-label">Fresh drops</span><h2>Latest projects</h2></div><a href="#/projects" class="btn btn-ghost btn-sm">See all →</a></div>
       <div class="project-grid" id="home-projects"></div>
     </div>
   </section>
@@ -130,7 +135,7 @@
   <!-- LIVE SITES -->
   <section class="page fade-page hidden" id="page-live-sites">
     <div class="container section">
-      <div class="section-head"><h2>Live websites</h2><p>Other websites I've personally built and currently run.</p></div>
+      <div class="section-head"><div><span class="eyebrow-label">Portfolio</span><h2>Live websites</h2><p>Other websites I've personally built and currently run.</p></div></div>
       <div class="livesite-grid" id="live-sites-grid"></div>
     </div>
   </section>
@@ -138,7 +143,7 @@
   <!-- PROJECTS -->
   <section class="page fade-page hidden" id="page-projects">
     <div class="container section">
-      <div class="section-head"><h2 id="projects-title">All projects</h2><p id="projects-count"></p></div>
+      <div class="section-head"><div><span class="eyebrow-label">Library</span><h2 id="projects-title">All projects</h2><p id="projects-count"></p></div></div>
       <div class="filters-bar" id="projects-filters"></div>
       <div class="project-grid" id="projects-grid"></div>
     </div>
@@ -147,7 +152,7 @@
   <!-- CATEGORIES -->
   <section class="page fade-page hidden" id="page-categories">
     <div class="container section">
-      <div class="section-head"><h2>Categories</h2><p>Every upload is organized into its own category folder.</p></div>
+      <div class="section-head"><div><span class="eyebrow-label">Browse</span><h2>Categories</h2><p>Every upload is organized into its own category folder.</p></div></div>
       <div class="folder-grid" id="categories-grid"></div>
     </div>
   </section>
@@ -160,8 +165,8 @@
   <!-- ABOUT -->
   <section class="page fade-page hidden" id="page-about">
     <div class="container section">
-      <div class="section-head"><h2>About Mr JB World</h2></div>
-      <p style="max-width:70ch;color:var(--text-muted);line-height:1.7;margin-bottom:30px;">Mr JB World is a one-person marketplace for ready-to-use websites and applications. Every project is uploaded, categorized and maintained directly by Mr JB — free projects download instantly, and premium ones are handled personally over email so you always reach a real person.</p>
+      <div class="section-head"><div><span class="eyebrow-label">About</span><h2>About The Mr JB World</h2></div></div>
+      <p style="max-width:70ch;color:var(--text-muted);line-height:1.7;margin-bottom:30px;">The Mr JB World is a one-person marketplace for ready-to-use websites and applications. Every project is uploaded, categorized and maintained directly by Mr JB — free projects download instantly, and premium ones are handled personally over email so you always reach a real person.</p>
       <div class="kpi-grid" id="about-stats"></div>
     </div>
   </section>
@@ -169,7 +174,7 @@
   <!-- CONTACT -->
   <section class="page fade-page hidden" id="page-contact">
     <div class="container section">
-      <div class="section-head"><h2>Contact</h2><p>Questions, custom work, or ready to buy a premium project — reach out directly.</p></div>
+      <div class="section-head"><div><span class="eyebrow-label">Reach out</span><h2>Contact</h2><p>Questions, custom work, or ready to buy a premium project — reach out directly.</p></div></div>
       <div class="contact-grid">
         <div class="card">
           <div class="contact-tile" style="margin-bottom:20px;">
@@ -202,8 +207,8 @@
   <section class="page fade-page hidden" id="page-admin-login">
     <div class="login-shell">
       <div class="login-card">
-        <div class="logo"><span class="logo-mark">JB</span> Mr JB World</div>
-        <p class="login-sub" id="admin-login-sub">Admin access — Mr JB World dashboard</p>
+        <div class="logo"><span class="logo-mark">JB</span> The Mr JB World</div>
+        <p class="login-sub" id="admin-login-sub">Admin access — The Mr JB World dashboard</p>
         <form id="admin-login-form" novalidate>
           <div class="form-group"><label for="login-user">Username</label><input class="form-control" id="login-user" autocomplete="username" required></div>
           <div class="form-group"><label for="login-pass">Password</label><input class="form-control" id="login-pass" type="password" autocomplete="current-password" required></div>
@@ -243,7 +248,7 @@
   <div class="container">
     <div class="footer-grid">
       <div>
-        <div class="logo" style="margin-bottom:12px;"><span class="logo-mark">JB</span> Mr JB World</div>
+        <div class="logo" style="margin-bottom:12px;"><span class="logo-mark">JB</span> The Mr JB World</div>
         <p>A one-person marketplace for ready-to-use websites and applications — free downloads, premium projects by request.</p>
         <div class="footer-social">
           <a class="icon-link icon-youtube" id="footer-youtube-link" href="#" target="_blank" rel="noopener" aria-label="YouTube"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.5V8.5L15.8 12Z"/></svg></a>
@@ -261,7 +266,7 @@
       </div>
     </div>
     <div class="footer-bottom">
-      <span id="secret-trigger">© <span id="footer-year"></span> Mr JB World. All rights reserved.</span>
+      <span id="secret-trigger">© <span id="footer-year"></span> The Mr JB World. All rights reserved.</span>
       <span>Built for developers, by a developer.</span>
     </div>
   </div>

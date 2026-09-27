@@ -11,7 +11,7 @@
      3. Paste that ID below (between the quotes) and re-upload this script.js
         to your hosting. From then on every visitor sees the same live data.
 ========================================================================= */
-const CLOUD_DB_FILE_ID = '12iedF9XA-M5Vr188iT9AXgkactijkcSZ'; // <-- paste your Drive database File ID here after step 2
+const CLOUD_DB_FILE_ID = ''; // <-- paste your Drive database File ID here after step 2
 const CLOUD_API_KEY = 'AIzaSyB5xb8ydiKRv0GCu73Hfyw7hPevmoAfeNs'; // public, read-only Drive API key
 
 /* =========================================================================
@@ -25,14 +25,48 @@ const CATEGORY_ICONS = {
   'Websites':'globe','Web Applications':'layout-grid','Mobile Apps':'smartphone','Tools & Scripts':'wrench','Other Projects':'folder'
 };
 const CATEGORY_GRADIENTS = {
-  'Websites':['#3654FF','#5B82FF'], 'Web Applications':['#7C3AED','#A78BFA'], 'Mobile Apps':['#059669','#34D399'],
-  'Tools & Scripts':['#B96E00','#FFB020'], 'Other Projects':['#475569','#94A3B8']
+  'Websites':['#3654FF','#8FB4FF'], 'Web Applications':['#9A2B7A','#C874AC'], 'Mobile Apps':['#0D9268','#34D399'],
+  'Tools & Scripts':['#B96E00','#FFB020'], 'Other Projects':['#5A4A42','#9A8579']
 };
 function categoryGradient(cat){ const g = CATEGORY_GRADIENTS[cat] || ['#475569','#94A3B8']; return `linear-gradient(135deg,${g[0]},${g[1]})`; }
 function categoryIcon(cat){ return CATEGORY_ICONS[cat] || 'folder'; }
+function driveImageUrl(fileId){ return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`; }
+
+/* Reusable image slider — used on the home page (all-project previews) and on
+   the project detail page (per-project screenshots). items: [{url, alt, href?, caption?}] */
+function buildSliderHTML(items, opts){
+  opts = opts || {};
+  const height = opts.height || '320px';
+  if(!items.length) return '';
+  const slide = (it)=>{
+    const img = `<img src="${it.url}" alt="${escapeHtml(it.alt||'')}" loading="lazy">`;
+    const caption = it.caption ? `<div class="img-slider-caption">${escapeHtml(it.caption)}</div>` : '';
+    const inner = img+caption;
+    return `<div class="img-slider-slide">${it.href ? `<a href="${it.href}">${inner}</a>` : inner}</div>`;
+  };
+  return `<div class="img-slider" style="--slider-h:${height};">
+    <div class="img-slider-track">${items.map(slide).join('')}</div>
+    ${items.length>1 ? `<button type="button" class="img-slider-nav prev" data-slide-dir="-1" aria-label="Previous image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button type="button" class="img-slider-nav next" data-slide-dir="1" aria-label="Next image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m9 18 6-6-6-6"/></svg></button>
+    <div class="img-slider-dots">${items.map((_,i)=>`<button type="button" class="img-slider-dot${i===0?' active':''}" data-slide-go="${i}" aria-label="Go to image ${i+1}"></button>`).join('')}</div>` : ''}
+  </div>`;
+}
+function wireSlider(root, autoplayMs){
+  if(!root) return;
+  const track = qs('.img-slider-track', root);
+  const slides = qsa('.img-slider-slide', root);
+  const dots = qsa('.img-slider-dot', root);
+  if(!track || slides.length<2) return;
+  let idx = 0, timer = null;
+  function go(i){ idx = (i+slides.length)%slides.length; track.style.transform = `translateX(-${idx*100}%)`; dots.forEach((d,di)=> d.classList.toggle('active', di===idx)); }
+  function restart(){ if(timer) clearInterval(timer); if(autoplayMs) timer = setInterval(()=> go(idx+1), autoplayMs); }
+  qsa('[data-slide-dir]', root).forEach(b=> b.onclick = ()=>{ go(idx+Number(b.dataset.slideDir)); restart(); });
+  dots.forEach(d=> d.onclick = ()=>{ go(Number(d.dataset.slideGo)); restart(); });
+  go(0); restart();
+}
 
 const DEFAULT_SETTINGS = {
-  siteName:'Mr JB World',
+  siteName:'The Mr JB World',
   contactEmail:'mrjbsa.official@outlook.com',
   youtubeUrl:'https://www.youtube.com/@themrjbworld',
   currency:'PKR',
@@ -382,11 +416,12 @@ function applyBrandingLinks(){
 function projectCardHtml(p){
   const grad = categoryGradient(p.category);
   const icon = p.type==='app' ? 'smartphone' : categoryIcon(p.category);
+  const hasShots = p.screenshots && p.screenshots.length;
   return `<div class="project-card">
     <div class="project-thumb" style="background:${grad};">
       <span class="badge">${escapeHtml(p.category)}</span>
       <span class="badge-price ${p.isFree?'badge-free':'badge-paid'}">${p.isFree?'Free':formatPrice(p.price)}</span>
-      <svg data-lucide="${icon}"></svg>
+      ${hasShots ? `<img src="${p.screenshots[0].url}" alt="${escapeHtml(p.name)}" loading="lazy" class="project-thumb-img">` : `<svg data-lucide="${icon}"></svg>`}
     </div>
     <div class="project-body">
       <h3><a href="#/project/${p.slug}">${escapeHtml(p.name)}</a></h3>
@@ -517,6 +552,18 @@ function renderHome(){
   const latest = [...projects].sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt)).slice(0,6);
   qs('#home-projects').innerHTML = latest.length ? latest.map(projectCardHtml).join('') : emptyStateHtml('No projects yet', 'New projects will appear here as soon as they are uploaded.');
   renderLiveSitesSection('home-live-sites', 3);
+
+  const previewItems = [];
+  [...projects].sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt)).forEach(p=>{
+    (p.screenshots||[]).forEach(s=> previewItems.push({ url:s.url, alt:p.name, href:'#/project/'+p.slug, caption:p.name }));
+  });
+  const previewSection = qs('#home-preview-section');
+  if(previewSection) previewSection.classList.toggle('hidden', previewItems.length===0);
+  if(previewItems.length){
+    qs('#home-preview-slider').innerHTML = buildSliderHTML(previewItems.slice(0,14), {height:'380px'});
+    wireSlider(qs('#home-preview-slider .img-slider'), 4000);
+  }
+
   refreshIcons();
   wireActionButtons(qs('#home-projects'));
   applyBrandingLinks();
@@ -574,11 +621,15 @@ function renderProjectDetail(slug){
   const content = qs('#project-detail-content');
   if(!p){ content.innerHTML = emptyStateHtml('Project not found', 'It may have been removed.'); document.title='Not found'; return; }
   document.title = p.name+' — '+DataStore.getSettings().siteName;
+  const hasShots = p.screenshots && p.screenshots.length;
+  const heroHtml = hasShots
+    ? buildSliderHTML(p.screenshots.map(s=>({ url:s.url, alt:p.name })), { height:'340px' })
+    : `<div class="detail-hero" style="background:${categoryGradient(p.category)}"><svg data-lucide="${p.type==='app'?'smartphone':categoryIcon(p.category)}"></svg></div>`;
   content.innerHTML = `
     <a href="#/projects" class="btn btn-ghost btn-sm" style="margin-bottom:20px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m7-7-7 7 7 7"/></svg> Back to projects</a>
     <div class="detail-grid">
       <div>
-        <div class="detail-hero" style="background:${categoryGradient(p.category)}"><svg data-lucide="${p.type==='app'?'smartphone':categoryIcon(p.category)}"></svg></div>
+        ${heroHtml}
         <div class="eyebrow-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> ${escapeHtml(p.category)}</div>
         <h1 style="font-size:1.9rem;">${escapeHtml(p.name)}</h1>
         <p style="color:var(--text-muted);margin-top:12px;line-height:1.7;max-width:65ch;">${escapeHtml(p.fullDesc||p.shortDesc||'')}</p>
@@ -597,6 +648,7 @@ function renderProjectDetail(slug){
     </div>`;
   refreshIcons();
   wireActionButtons(content);
+  if(hasShots) wireSlider(qs('.img-slider', content), 4500);
 }
 
 function renderAboutStats(){
@@ -614,11 +666,11 @@ function initContactPage(){ applyBrandingLinks(); }
 
 const LEGAL_PAGES = {
   privacy: { title:'Privacy Policy', body:`
-    <h2>What we store</h2><p>Mr JB World stores project listings and your download counts locally in your browser. No customer account or personal profile is created for browsing or downloading free projects.</p>
+    <h2>What we store</h2><p>The Mr JB World stores project listings and your download counts locally in your browser. No customer account or personal profile is created for browsing or downloading free projects.</p>
     <h2>Premium projects</h2><p>Buying a premium project happens by email. Any information you share (name, contact details, payment proof) is used only to process that purchase and is not sold or shared with third parties.</p>
     <h2>Downloads</h2><p>Free projects can be downloaded immediately with no account or payment. Files are hosted on Google Drive; downloading a file is subject to Google's own terms of service.</p>` },
   terms: { title:'Terms of Use', body:`
-    <h2>Using the projects</h2><p>Projects downloaded from Mr JB World are provided as-is. You're responsible for testing and adapting any project before using it in production.</p>
+    <h2>Using the projects</h2><p>Projects downloaded from The Mr JB World are provided as-is. You're responsible for testing and adapting any project before using it in production.</p>
     <h2>Premium purchases</h2><p>Premium projects are sold directly by Mr JB over email. Payment methods and confirmation are arranged individually with the buyer.</p>
     <h2>Fair use</h2><p>Please don't redistribute or resell downloaded projects without permission.</p>` }
 };
@@ -793,6 +845,16 @@ function renderAdminAddProject(content){
         <div id="ap-progress-text" style="font-size:.78rem;color:var(--text-muted);margin-top:6px;"></div>
       </div>
 
+      <div class="form-group">
+        <label>Screenshots (optional — any number, shown as a sliding gallery)</label>
+        <div class="dropzone" id="ap-shots-dropzone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 8h.01M4 4h16v16H4z"/></svg>
+          <div id="ap-shots-label">Click to choose images, or drag them here</div>
+        </div>
+        <input type="file" id="ap-shots-input" class="hidden" accept="image/*" multiple>
+        <div id="ap-shots-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
+      </div>
+
       <button class="btn btn-secondary" id="ap-connect-drive" type="button" style="margin-bottom:14px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         ${DriveAPI.isConnected() ? 'Google Drive connected ✓' : 'Connect Google Drive'}
@@ -815,6 +877,20 @@ function renderAdminAddProject(content){
   fileInput.onchange = ()=>{ if(fileInput.files[0]){ selectedFile = fileInput.files[0]; qs('#ap-file-label').textContent = selectedFile.name+' ('+(selectedFile.size/1048576).toFixed(1)+' MB)'; } };
   ['dragover','dragleave','drop'].forEach(evt=> dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.toggle('drag', evt==='dragover'); }));
   dz.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]){ selectedFile = e.dataTransfer.files[0]; fileInput.files = e.dataTransfer.files; qs('#ap-file-label').textContent = selectedFile.name+' ('+(selectedFile.size/1048576).toFixed(1)+' MB)'; } });
+
+  let selectedScreenshots = [];
+  const shotsDz = qs('#ap-shots-dropzone'); const shotsInput = qs('#ap-shots-input');
+  function renderShotsPreview(){
+    qs('#ap-shots-preview').innerHTML = selectedScreenshots.map((f,i)=>`<div style="position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;"><img src="${URL.createObjectURL(f)}" style="width:100%;height:100%;object-fit:cover;display:block;"><button type="button" data-rm-shot="${i}" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border:none;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:12px;line-height:1;cursor:pointer;">×</button></div>`).join('');
+    qsa('[data-rm-shot]', qs('#ap-shots-preview')).forEach(b=> b.onclick = ()=>{ selectedScreenshots.splice(Number(b.dataset.rmShot),1); renderShotsPreview(); });
+    qs('#ap-shots-label').textContent = selectedScreenshots.length ? selectedScreenshots.length+' image'+(selectedScreenshots.length===1?'':'s')+' selected — click to add more' : 'Click to choose images, or drag them here';
+  }
+  shotsDz.onclick = ()=> shotsInput.click();
+  shotsInput.onchange = ()=>{ selectedScreenshots.push(...Array.from(shotsInput.files)); shotsInput.value=''; renderShotsPreview(); };
+  ['dragover','dragleave','drop'].forEach(evt=> shotsDz.addEventListener(evt, e=>{
+    e.preventDefault(); shotsDz.classList.toggle('drag', evt==='dragover');
+    if(evt==='drop'){ selectedScreenshots.push(...Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/'))); renderShotsPreview(); }
+  }));
 
   qs('#ap-connect-drive').onclick = async (e)=>{
     const btn = e.currentTarget; btn.disabled=true; btn.innerHTML='<span class="spinner dark-sp"></span> Connecting…';
@@ -852,6 +928,18 @@ function renderAdminAddProject(content){
       progressText.textContent = 'Finalizing download link…';
       const downloadUrl = await DriveAPI.makePublic(uploaded.id);
 
+      const screenshots = [];
+      if(selectedScreenshots.length){
+        const shotsFolderId = await DriveAPI.ensureCategoryFolder('Screenshots');
+        for(let i=0;i<selectedScreenshots.length;i++){
+          const f = selectedScreenshots[i];
+          progressText.textContent = `Uploading screenshot ${i+1}/${selectedScreenshots.length}…`;
+          const up = await DriveAPI.uploadFile(f, shotsFolderId, (pct)=>{ progressFill.style.width = pct+'%'; });
+          await DriveAPI.makePublic(up.id);
+          screenshots.push({ id: up.id, url: driveImageUrl(up.id) });
+        }
+      }
+
       const project = {
         id: uid(), slug: slugify(name)+'-'+Date.now().toString(36).slice(-4), name, category,
         shortDesc: qs('#ap-short').value.trim(), fullDesc: qs('#ap-full').value.trim(),
@@ -859,7 +947,7 @@ function renderAdminAddProject(content){
         requirements: qs('#ap-requirements').value.trim(), features:[],
         isFree, price, type: isApp?'app':'website',
         fileSize: (selectedFile.size/1048576).toFixed(1)+' MB',
-        driveFileId: uploaded.id, downloadUrl,
+        driveFileId: uploaded.id, downloadUrl, screenshots,
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), downloadCount:0
       };
       DataStore.saveProject(project);
