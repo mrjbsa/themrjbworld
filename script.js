@@ -91,9 +91,12 @@ function seedIfEmpty(){
   // Admin → Settings → Change Password after signing in.
   const DEFAULT_ADMIN_HASH = '8abb17919f7499cb6880e3441fab114077b57a06eb129d780cf035a425e7a2dc';
   const OLD_DEFAULT_ADMIN_HASH = '2e91ff8277625ff6780200952ef5609536d38e53a7016641958ac9873417fd83';
-  const savedCreds = JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'null');
-  if(!savedCreds || (savedCreds.username==='mrjb' && savedCreds.hash===OLD_DEFAULT_ADMIN_HASH)){
+  // Credentials version: bumping this resets every browser's saved admin login
+  // back to the default below (one time), so a stale/forgotten saved password can never lock you out.
+  const CREDS_VERSION = 'v3';
+  if(localStorage.getItem('mjbw_creds_version') !== CREDS_VERSION){
     localStorage.setItem(DB.ADMIN_CREDS, JSON.stringify({ username:'mrjb', hash:DEFAULT_ADMIN_HASH }));
+    localStorage.setItem('mjbw_creds_version', CREDS_VERSION);
   }
 }
 seedIfEmpty();
