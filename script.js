@@ -25,8 +25,8 @@ const CATEGORY_ICONS = {
   'Websites':'globe','Web Applications':'layout-grid','Mobile Apps':'smartphone','Tools & Scripts':'wrench','Other Projects':'folder'
 };
 const CATEGORY_GRADIENTS = {
-  'Websites':['#3654FF','#8FB4FF'], 'Web Applications':['#9A2B7A','#C874AC'], 'Mobile Apps':['#0D9268','#34D399'],
-  'Tools & Scripts':['#B96E00','#FFB020'], 'Other Projects':['#5A4A42','#9A8579']
+  'Websites':['#3654FF','#5B82FF'], 'Web Applications':['#7C3AED','#A78BFA'], 'Mobile Apps':['#059669','#34D399'],
+  'Tools & Scripts':['#B96E00','#FFB020'], 'Other Projects':['#475569','#94A3B8']
 };
 function categoryGradient(cat){ const g = CATEGORY_GRADIENTS[cat] || ['#475569','#94A3B8']; return `linear-gradient(135deg,${g[0]},${g[1]})`; }
 function categoryIcon(cat){ return CATEGORY_ICONS[cat] || 'folder'; }
