@@ -17,7 +17,7 @@ const CLOUD_API_KEY = 'AIzaSyB5xb8ydiKRv0GCu73Hfyw7hPevmoAfeNs'; // public, read
 /* =========================================================================
    1. STORAGE KEYS & DEFAULTS
 ========================================================================= */
-const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', ADMIN:'mjbw_admin_session', ADMIN_CREDS:'mjbw_admin_creds', DRIVE_FOLDERS:'mjbw_drive_folders', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites' };
+const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', ADMIN:'mjbw_admin_session', ADMIN_CREDS:'mjbw_admin_creds', DRIVE_FOLDERS:'mjbw_drive_folders', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites', BANNERS:'mjbw_banners', DIRTY:'mjbw_cloud_dirty' };
 
 const DEFAULT_CATEGORIES = ['Websites','Web Applications','Mobile Apps','Tools & Scripts','Other Projects'];
 
@@ -65,6 +65,26 @@ function wireSlider(root, autoplayMs){
   go(0); restart();
 }
 
+function buildBannerSliderHTML(banners){
+  const link = (u)=> /^(#|mailto:|tel:|https?:\/\/)/i.test(u) ? u : 'https://'+u;
+  const slide = (b)=>{
+    const l = b.buttonLink ? link(b.buttonLink) : '';
+    const ext = l && !l.startsWith('#');
+    return `<div class="img-slider-slide banner-slide"><img src="${b.imageUrl}" alt="${escapeHtml(b.title||'')}">
+      <div class="banner-overlay"><div class="banner-content">
+        ${b.title ? `<h2>${escapeHtml(b.title)}</h2>` : ''}
+        ${b.subtitle ? `<p>${escapeHtml(b.subtitle)}</p>` : ''}
+        ${b.buttonText && l ? `<a class="btn btn-primary" href="${escapeHtml(l)}" ${ext?'target="_blank" rel="noopener"':''}>${escapeHtml(b.buttonText)}</a>` : ''}
+      </div></div></div>`;
+  };
+  return `<div class="img-slider banner-slider" style="--slider-h:clamp(240px,42vw,470px);">
+    <div class="img-slider-track">${banners.map(slide).join('')}</div>
+    ${banners.length>1 ? `<button type="button" class="img-slider-nav prev" data-slide-dir="-1" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button type="button" class="img-slider-nav next" data-slide-dir="1" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m9 18 6-6-6-6"/></svg></button>
+    <div class="img-slider-dots">${banners.map((_,i)=>`<button type="button" class="img-slider-dot${i===0?' active':''}" data-slide-go="${i}" aria-label="Slide ${i+1}"></button>`).join('')}</div>` : ''}
+  </div>`;
+}
+
 const DEFAULT_SETTINGS = {
   siteName:'The Mr JB World',
   contactEmail:'mrjbsa.official@outlook.com',
@@ -110,13 +130,15 @@ const DataStore = {
   getProjectById(id){ return this.getProjects().find(p=>p.id===id)||null; },
   saveProject(project){ const all=this.getProjects(); const idx=all.findIndex(p=>p.id===project.id); if(idx>-1) all[idx]=project; else all.unshift(project); localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); CloudSync.schedulePush(); return project; },
   deleteProject(id){ localStorage.setItem(DB.PROJECTS, JSON.stringify(this.getProjects().filter(p=>p.id!==id))); CloudSync.schedulePush(); },
-  incrementDownload(id){ const all=this.getProjects(); const p=all.find(x=>x.id===id); if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); CloudSync.schedulePush(); } },
+  incrementDownload(id){ const all=this.getProjects(); const p=all.find(x=>x.id===id); if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); } },
   getCategories(){ return JSON.parse(localStorage.getItem(DB.CATEGORIES)||'[]'); },
   saveCategories(cats){ localStorage.setItem(DB.CATEGORIES, JSON.stringify(cats)); CloudSync.schedulePush(); },
   getSettings(){ return JSON.parse(localStorage.getItem(DB.SETTINGS)||'{}'); },
   saveSettings(s){ localStorage.setItem(DB.SETTINGS, JSON.stringify(s)); },
   getDriveFolders(){ return JSON.parse(localStorage.getItem(DB.DRIVE_FOLDERS)||'{}'); },
   saveDriveFolders(map){ localStorage.setItem(DB.DRIVE_FOLDERS, JSON.stringify(map)); },
+  getBanners(){ return JSON.parse(localStorage.getItem(DB.BANNERS)||'[]'); },
+  saveBanners(list){ localStorage.setItem(DB.BANNERS, JSON.stringify(list)); CloudSync.schedulePush(); },
   getLiveSites(){ return JSON.parse(localStorage.getItem(DB.LIVE_SITES)||'[]'); },
   saveLiveSite(site){ const all=this.getLiveSites(); const idx=all.findIndex(s=>s.id===site.id); if(idx>-1) all[idx]=site; else all.unshift(site); localStorage.setItem(DB.LIVE_SITES, JSON.stringify(all)); CloudSync.schedulePush(); return site; },
   deleteLiveSite(id){ localStorage.setItem(DB.LIVE_SITES, JSON.stringify(this.getLiveSites().filter(s=>s.id!==id))); CloudSync.schedulePush(); }
@@ -135,6 +157,7 @@ const CloudSync = {
   async pull(){
     const fileId = this.getFileId();
     if(!fileId || !CLOUD_API_KEY) return false;
+    if(localStorage.getItem(DB.DIRTY)==='1') return false; // this browser has newer unsynced admin changes — don't overwrite them
     try{
       const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${CLOUD_API_KEY}`, { cache:'no-store' });
       if(!res.ok) return false;
@@ -142,11 +165,13 @@ const CloudSync = {
       if(Array.isArray(data.projects)) localStorage.setItem(DB.PROJECTS, JSON.stringify(data.projects));
       if(Array.isArray(data.categories) && data.categories.length) localStorage.setItem(DB.CATEGORIES, JSON.stringify(data.categories));
       if(Array.isArray(data.liveSites)) localStorage.setItem(DB.LIVE_SITES, JSON.stringify(data.liveSites));
+      if(Array.isArray(data.banners)) localStorage.setItem(DB.BANNERS, JSON.stringify(data.banners));
       return true;
     }catch(e){ console.warn('Cloud pull failed:', e); return false; }
   },
 
   schedulePush(){
+    if(typeof AuthService!=='undefined' && AuthService.isLoggedIn()) localStorage.setItem(DB.DIRTY,'1'); // admin change not yet on Drive; cleared after a successful push
     if(typeof DriveAPI==='undefined' || !DriveAPI.isConnected()) return; // only an admin session with Drive connected pushes
     clearTimeout(this._pushTimer);
     this._pushTimer = setTimeout(()=>{ this.push().catch(e=>console.warn('Cloud push failed:', e)); }, 800);
@@ -157,6 +182,7 @@ const CloudSync = {
       projects: DataStore.getProjects(),
       categories: DataStore.getCategories(),
       liveSites: DataStore.getLiveSites(),
+      banners: DataStore.getBanners(),
       updatedAt: new Date().toISOString()
     });
     let fileId = this.getFileId();
@@ -168,7 +194,7 @@ const CloudSync = {
         headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
         body: payload
       });
-      if(res.ok) return fileId;
+      if(res.ok){ localStorage.removeItem(DB.DIRTY); return fileId; }
       fileId = ''; // file missing/inaccessible — recreate below
     }
 
@@ -187,6 +213,7 @@ const CloudSync = {
     const settings = DataStore.getSettings();
     settings.cloudFileId = data.id;
     DataStore.saveSettings(settings);
+    localStorage.removeItem(DB.DIRTY);
     return data.id;
   }
 };
@@ -559,6 +586,16 @@ function renderHome(){
   qs('#home-projects').innerHTML = latest.length ? latest.map(projectCardHtml).join('') : emptyStateHtml('No projects yet', 'New projects will appear here as soon as they are uploaded.');
   renderLiveSitesSection('home-live-sites', 3);
 
+  const banners = DataStore.getBanners();
+  const bannerSection = qs('#home-banner-section');
+  if(bannerSection){
+    bannerSection.classList.toggle('hidden', banners.length===0);
+    if(banners.length){
+      qs('#home-banner-slider').innerHTML = buildBannerSliderHTML(banners);
+      wireSlider(qs('#home-banner-slider .img-slider'), 5500);
+    }
+  }
+
   const previewItems = [];
   [...projects].sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt)).forEach(p=>{
     (p.screenshots||[]).forEach(s=> previewItems.push({ url:s.url, alt:p.name, href:'#/project/'+p.slug, caption:p.name }));
@@ -769,6 +806,7 @@ function renderAdminTab(tab){
   else if(tab==='add-project') renderAdminAddProject(content);
   else if(tab==='categories') renderAdminCategories(content);
   else if(tab==='live-sites') renderAdminLiveSites(content);
+  else if(tab==='slider') renderAdminSlider(content);
   else if(tab==='downloads') renderAdminDownloads(content);
   else if(tab==='settings') renderAdminSettings(content);
   else renderAdminOverview(content);
@@ -1069,6 +1107,122 @@ function renderAdminLiveSites(content){
   });
 }
 
+let bannerEditingId = null;
+function renderAdminSlider(content){
+  const banners = DataStore.getBanners();
+  content.innerHTML = `
+    <div class="admin-topline"><h2>Homepage Slider</h2><p style="color:var(--text-muted);font-size:.85rem;">Big banner slides shown at the top of your homepage — use them to show visitors what you can build for them. Images are saved to your Google Drive.</p></div>
+    <div class="admin-panel"><div class="admin-panel-header"><h3 id="bn-form-title">Add a slide</h3></div>
+      <div class="admin-panel-body">
+        <div class="form-group">
+          <label>Slide image (wide images look best, e.g. 1600×600)</label>
+          <div class="dropzone" id="bn-dropzone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 8h.01M4 4h16v16H4z"/></svg><div id="bn-file-label">Click to choose an image, or drag it here</div></div>
+          <input type="file" id="bn-file-input" class="hidden" accept="image/*">
+          <img id="bn-preview" class="hidden" style="margin-top:10px;max-height:140px;border-radius:10px;border:1px solid var(--border);" alt="">
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label for="bn-title">Headline</label><input class="form-control" id="bn-title" placeholder="e.g. Get your own website or app built"></div>
+          <div class="form-group"><label for="bn-sub">Sub-text</label><input class="form-control" id="bn-sub" placeholder="e.g. Custom websites & apps, delivered fast"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label for="bn-btn-text">Button text (optional)</label><input class="form-control" id="bn-btn-text" placeholder="e.g. Contact me"></div>
+          <div class="form-group"><label for="bn-btn-link">Button link (optional)</label><input class="form-control" id="bn-btn-link" placeholder="#/contact or https://..."></div>
+        </div>
+        <div id="bn-progress" style="font-size:.8rem;color:var(--text-muted);margin-bottom:10px;"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="bn-save-btn" type="button">Add slide</button>
+          <button class="btn btn-secondary hidden" id="bn-cancel-btn" type="button">Cancel edit</button>
+        </div>
+      </div>
+    </div>
+    <div class="admin-panel"><div class="admin-panel-body">
+      ${banners.length ? banners.map((b,i)=>`
+        <div style="display:flex;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+          <img src="${b.imageUrl}" alt="" style="width:120px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
+          <div style="flex:1;min-width:150px;"><b>${escapeHtml(b.title||'(no headline)')}</b><div style="font-size:.8rem;color:var(--text-muted);">${escapeHtml(b.subtitle||'')}</div></div>
+          <div class="row-actions">
+            <button class="btn btn-secondary btn-sm" data-bn-up="${b.id}" ${i===0?'disabled':''}>↑</button>
+            <button class="btn btn-secondary btn-sm" data-bn-down="${b.id}" ${i===banners.length-1?'disabled':''}>↓</button>
+            <button class="btn btn-secondary btn-sm" data-bn-edit="${b.id}">Edit</button>
+            <button class="btn btn-danger btn-sm" data-bn-del="${b.id}">Delete</button>
+          </div>
+        </div>`).join('') : emptyStateHtml('No slides yet', 'Add your first slide using the form above.')}
+    </div></div>`;
+  refreshIcons();
+  bannerEditingId = null;
+  let chosen = null;
+  const dz = qs('#bn-dropzone'), input = qs('#bn-file-input'), prev = qs('#bn-preview');
+  function setFile(f){
+    if(!f || !f.type.startsWith('image/')){ toast('Please choose an image file.', 'error'); return; }
+    chosen = f; qs('#bn-file-label').textContent = f.name+' ('+(f.size/1048576).toFixed(1)+' MB)';
+    prev.src = URL.createObjectURL(f); prev.classList.remove('hidden');
+  }
+  dz.onclick = ()=> input.click();
+  input.onchange = ()=>{ if(input.files[0]) setFile(input.files[0]); };
+  ['dragover','dragleave','drop'].forEach(evt=> dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.toggle('drag', evt==='dragover'); if(evt==='drop' && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); }));
+
+  function resetForm(){
+    bannerEditingId = null; chosen = null; input.value='';
+    ['#bn-title','#bn-sub','#bn-btn-text','#bn-btn-link'].forEach(id=> qs(id).value='');
+    qs('#bn-file-label').textContent = 'Click to choose an image, or drag it here';
+    prev.classList.add('hidden'); prev.removeAttribute('src');
+    qs('#bn-form-title').textContent = 'Add a slide'; qs('#bn-save-btn').textContent = 'Add slide'; qs('#bn-cancel-btn').classList.add('hidden');
+  }
+  qs('#bn-cancel-btn').onclick = resetForm;
+
+  qs('#bn-save-btn').onclick = async ()=>{
+    const existing = bannerEditingId ? banners.find(b=>b.id===bannerEditingId) : null;
+    if(!existing && !chosen){ toast('Choose an image for the slide.', 'error'); return; }
+    const btn = qs('#bn-save-btn'); const label = btn.textContent; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Working…';
+    const status = qs('#bn-progress');
+    try{
+      let imageId = existing ? existing.imageId : '', imageUrl = existing ? existing.imageUrl : '';
+      if(chosen){
+        status.textContent = 'Connecting to Google Drive…';
+        await DriveAPI.ensureToken();
+        const folderId = await DriveAPI.ensureCategoryFolder('Slider');
+        status.textContent = 'Uploading image…';
+        const up = await DriveAPI.uploadFile(chosen, folderId, (pct)=>{ status.textContent = 'Uploading image… '+pct+'%'; });
+        await DriveAPI.makePublic(up.id);
+        imageId = up.id; imageUrl = `https://drive.google.com/thumbnail?id=${up.id}&sz=w1600`;
+      }
+      const banner = { id: existing ? existing.id : uid(), imageId, imageUrl,
+        title: qs('#bn-title').value.trim(), subtitle: qs('#bn-sub').value.trim(),
+        buttonText: qs('#bn-btn-text').value.trim(), buttonLink: qs('#bn-btn-link').value.trim() };
+      const list = DataStore.getBanners();
+      const idx = list.findIndex(b=>b.id===banner.id);
+      if(idx>-1) list[idx] = banner; else list.push(banner);
+      DataStore.saveBanners(list);
+      toast(existing ? 'Slide updated.' : 'Slide added.', 'success');
+      renderAdminTab('slider');
+    }catch(err){
+      toast('Could not save slide: '+(err.message||err), 'error');
+      status.textContent = ''; btn.disabled = false; btn.textContent = label;
+    }
+  };
+  function move(id, dir){
+    const list = DataStore.getBanners(); const i = list.findIndex(b=>b.id===id); const j = i+dir;
+    if(i<0 || j<0 || j>=list.length) return;
+    [list[i], list[j]] = [list[j], list[i]]; DataStore.saveBanners(list); renderAdminTab('slider');
+  }
+  qsa('[data-bn-up]', content).forEach(b=> b.onclick = ()=> move(b.dataset.bnUp, -1));
+  qsa('[data-bn-down]', content).forEach(b=> b.onclick = ()=> move(b.dataset.bnDown, 1));
+  qsa('[data-bn-edit]', content).forEach(b=> b.onclick = ()=>{
+    const bn = banners.find(x=>x.id===b.dataset.bnEdit); if(!bn) return;
+    bannerEditingId = bn.id; chosen = null;
+    qs('#bn-title').value = bn.title||''; qs('#bn-sub').value = bn.subtitle||'';
+    qs('#bn-btn-text').value = bn.buttonText||''; qs('#bn-btn-link').value = bn.buttonLink||'';
+    prev.src = bn.imageUrl; prev.classList.remove('hidden');
+    qs('#bn-file-label').textContent = 'Current image kept — click to replace it';
+    qs('#bn-form-title').textContent = 'Edit slide'; qs('#bn-save-btn').textContent = 'Save changes'; qs('#bn-cancel-btn').classList.remove('hidden');
+    qs('#bn-title').scrollIntoView({behavior:'smooth', block:'center'});
+  });
+  qsa('[data-bn-del]', content).forEach(b=> b.onclick = ()=>{
+    const bn = banners.find(x=>x.id===b.dataset.bnDel);
+    confirmDialog('Delete this slide from your homepage?', ()=>{ DataStore.saveBanners(DataStore.getBanners().filter(x=>x.id!==bn.id)); toast('Slide deleted.', 'success'); renderAdminTab('slider'); }, 'Delete');
+  });
+}
+
 function renderAdminDownloads(content){
   const sorted = [...DataStore.getProjects()].sort((a,b)=>(b.downloadCount||0)-(a.downloadCount||0));
   content.innerHTML = `<div class="admin-topline"><h2>Downloads</h2></div>
@@ -1113,6 +1267,8 @@ function renderAdminSettings(content){
           : `<div class="form-group"><label>Current File ID${CloudSync.getFileId()?'':' (not created yet — save a project or category first)'}</label>
              <div style="display:flex;gap:8px;"><input class="form-control" id="s-cloud-id" value="${escapeHtml(CloudSync.getFileId())}" readonly><button class="btn btn-secondary btn-sm" id="s-copy-cloud-id">Copy</button></div></div>
              <div class="info-banner" style="margin-top:10px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01"/></svg> ${CloudSync.getFileId() ? 'One-time step: copy this ID into the <code>CLOUD_DB_FILE_ID</code> constant near the top of script.js, then re-upload script.js to your hosting. After that, every visitor on every device will see your live projects and can download them — no login needed.' : 'This box fills in automatically the first time you add/edit a project, category, or live site while Drive is connected above.'}</div>`}
+        <button class="btn btn-secondary" id="s-sync-cloud" style="margin-top:14px;">Sync everything to cloud now</button>
+        <p style="font-size:.78rem;color:var(--text-muted);margin-top:8px;">Use this once after connecting Drive so projects you uploaded earlier also become visible to every visitor.</p>
       </div>
     </div>
     <div class="admin-panel"><div class="admin-panel-header"><h3>Admin access</h3></div>
@@ -1175,6 +1331,11 @@ function renderAdminSettings(content){
     const s = DataStore.getSettings();
     s.driveClientId = qs('#s-client-id').value.trim();
     DataStore.saveSettings(s); toast('Client ID saved.', 'success');
+  };
+  qs('#s-sync-cloud').onclick = async (e)=>{
+    const b = e.currentTarget; b.disabled = true; const t = b.textContent; b.textContent = 'Syncing…';
+    try{ await DriveAPI.ensureToken(); const id = await CloudSync.push(); toast('Synced to cloud.', 'success'); renderAdminTab('settings'); }
+    catch(err){ toast('Sync failed: '+(err.message||err), 'error'); b.disabled = false; b.textContent = t; }
   };
   if(qs('#s-copy-cloud-id')){
     qs('#s-copy-cloud-id').onclick = ()=>{
