@@ -449,16 +449,18 @@ function applyBrandingLinks(){
 function projectCardHtml(p){
   const grad = categoryGradient(p.category);
   const icon = p.type==='app' ? 'smartphone' : categoryIcon(p.category);
-  const hasShots = p.screenshots && p.screenshots.length;
+  const cover = p.coverImage || (p.screenshots && p.screenshots[0]) || null;
   return `<div class="project-card">
-    <div class="project-thumb" style="background:${grad};">
+    <a href="#/project/${p.slug}" class="project-thumb" style="background:${grad};">
       <span class="badge">${escapeHtml(p.category)}</span>
       <span class="badge-price ${p.isFree?'badge-free':'badge-paid'}">${p.isFree?'Free':formatPrice(p.price)}</span>
-      ${hasShots ? `<img src="${p.screenshots[0].url}" alt="${escapeHtml(p.name)}" loading="lazy" class="project-thumb-img">` : `<svg data-lucide="${icon}"></svg>`}
-    </div>
+      ${cover ? `<img src="${cover.url}" alt="${escapeHtml(p.name)}" loading="lazy" class="project-thumb-img">` : `<svg data-lucide="${icon}"></svg>`}
+      <div class="project-thumb-caption">
+        <h3>${escapeHtml(p.name)}</h3>
+        <p>${escapeHtml(p.shortDesc||'')}</p>
+      </div>
+    </a>
     <div class="project-body">
-      <h3><a href="#/project/${p.slug}">${escapeHtml(p.name)}</a></h3>
-      <p>${escapeHtml(p.shortDesc||'')}</p>
       <div class="project-meta-row"><svg data-lucide="download"></svg> ${(p.downloadCount||0).toLocaleString()} downloads <svg data-lucide="hard-drive" style="margin-left:6px;"></svg> ${escapeHtml(p.fileSize||'—')}</div>
       <div class="project-card-footer">
         <a href="#/project/${p.slug}" class="btn btn-secondary btn-sm">Details</a>
@@ -664,9 +666,10 @@ function renderProjectDetail(slug){
   const content = qs('#project-detail-content');
   if(!p){ content.innerHTML = emptyStateHtml('Project not found', 'It may have been removed.'); document.title='Not found'; return; }
   document.title = p.name+' — '+DataStore.getSettings().siteName;
-  const hasShots = p.screenshots && p.screenshots.length;
+  const galleryImages = [...(p.coverImage ? [p.coverImage] : []), ...(p.screenshots||[]).filter(s=> !p.coverImage || s.id!==p.coverImage.id)];
+  const hasShots = galleryImages.length>0;
   const heroHtml = hasShots
-    ? buildSliderHTML(p.screenshots.map(s=>({ url:s.url, alt:p.name })), { height:'340px' })
+    ? buildSliderHTML(galleryImages.map(s=>({ url:s.url, alt:p.name })), { height:'340px' })
     : `<div class="detail-hero" style="background:${categoryGradient(p.category)}"><svg data-lucide="${p.type==='app'?'smartphone':categoryIcon(p.category)}"></svg></div>`;
   content.innerHTML = `
     <a href="#/projects" class="btn btn-ghost btn-sm" style="margin-bottom:20px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m7-7-7 7 7 7"/></svg> Back to projects</a>
@@ -899,6 +902,17 @@ function renderAdminAddProject(content){
         <div id="ap-shots-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
       </div>
 
+      <div class="form-group">
+        <label>Cover image (shown on the card — like a thumbnail/poster, or app icon for apps)</label>
+        <div class="dropzone" id="ap-cover-dropzone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 8h.01M4 4h16v16H4z"/></svg>
+          <div id="ap-cover-label">Click to choose an image, or drag it here</div>
+        </div>
+        <input type="file" id="ap-cover-input" class="hidden" accept="image/*">
+        <img id="ap-cover-preview" class="hidden" style="margin-top:10px;max-height:120px;border-radius:10px;border:1px solid var(--border);" alt="">
+        <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px;">Not set? The first screenshot above is used instead, or a plain color if there are none.</p>
+      </div>
+
       <button class="btn btn-secondary" id="ap-connect-drive" type="button" style="margin-bottom:14px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         ${DriveAPI.isConnected() ? 'Google Drive connected ✓' : 'Connect Google Drive'}
@@ -935,6 +949,17 @@ function renderAdminAddProject(content){
     e.preventDefault(); shotsDz.classList.toggle('drag', evt==='dragover');
     if(evt==='drop'){ selectedScreenshots.push(...Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/'))); renderShotsPreview(); }
   }));
+
+  let selectedCover = null;
+  const coverDz = qs('#ap-cover-dropzone'), coverInput = qs('#ap-cover-input'), coverPreview = qs('#ap-cover-preview');
+  function setCover(f){
+    if(!f || !f.type.startsWith('image/')){ toast('Please choose an image file.', 'error'); return; }
+    selectedCover = f; qs('#ap-cover-label').textContent = f.name+' ('+(f.size/1048576).toFixed(1)+' MB) — click to change';
+    coverPreview.src = URL.createObjectURL(f); coverPreview.classList.remove('hidden');
+  }
+  coverDz.onclick = ()=> coverInput.click();
+  coverInput.onchange = ()=>{ if(coverInput.files[0]) setCover(coverInput.files[0]); };
+  ['dragover','dragleave','drop'].forEach(evt=> coverDz.addEventListener(evt, e=>{ e.preventDefault(); coverDz.classList.toggle('drag', evt==='dragover'); if(evt==='drop' && e.dataTransfer.files[0]) setCover(e.dataTransfer.files[0]); }));
 
   qs('#ap-connect-drive').onclick = async (e)=>{
     const btn = e.currentTarget; btn.disabled=true; btn.innerHTML='<span class="spinner dark-sp"></span> Connecting…';
@@ -984,6 +1009,15 @@ function renderAdminAddProject(content){
         }
       }
 
+      let coverImage = null;
+      if(selectedCover){
+        progressText.textContent = 'Uploading cover image…';
+        const coverFolderId = await DriveAPI.ensureCategoryFolder('Screenshots');
+        const upCover = await DriveAPI.uploadFile(selectedCover, coverFolderId, (pct)=>{ progressFill.style.width = pct+'%'; });
+        await DriveAPI.makePublic(upCover.id);
+        coverImage = { id: upCover.id, url: driveImageUrl(upCover.id) };
+      }
+
       const project = {
         id: uid(), slug: slugify(name)+'-'+Date.now().toString(36).slice(-4), name, category,
         shortDesc: qs('#ap-short').value.trim(), fullDesc: qs('#ap-full').value.trim(),
@@ -991,7 +1025,7 @@ function renderAdminAddProject(content){
         requirements: qs('#ap-requirements').value.trim(), features:[],
         isFree, price, type: isApp?'app':'website',
         fileSize: (selectedFile.size/1048576).toFixed(1)+' MB',
-        driveFileId: uploaded.id, downloadUrl, screenshots,
+        driveFileId: uploaded.id, downloadUrl, screenshots, coverImage,
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), downloadCount:0
       };
       DataStore.saveProject(project);
