@@ -375,6 +375,29 @@ const AuthService = {
 function qs(s,ctx){ return (ctx||document).querySelector(s); }
 function qsa(s,ctx){ return Array.from((ctx||document).querySelectorAll(s)); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* Lightweight, safe markdown → clean HTML for project/live-site descriptions.
+   Input is escaped first, so this only ever turns plain # / ** / - markers
+   into real headings, bold text and lists — nothing else can slip through. */
+function mdLite(raw){
+  if(!raw) return '';
+  const lines = escapeHtml(raw).replace(/\r\n/g,'\n').split('\n');
+  let html = '', inList = false;
+  const closeList = ()=>{ if(inList){ html += '</ul>'; inList = false; } };
+  const inline = (t)=> t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\*(.+?)\*/g,'<em>$1</em>');
+  lines.forEach(line=>{
+    const t = line.trim();
+    if(!t){ closeList(); return; }
+    const h = t.match(/^(#{1,3})\s+(.*)$/);
+    if(h){ closeList(); const lvl = h[1].length+2; html += `<h${lvl}>${inline(h[2])}</h${lvl}>`; return; }
+    const li = t.match(/^[-*•]\s+(.*)$/);
+    if(li){ if(!inList){ html += '<ul>'; inList = true; } html += `<li>${inline(li[1])}</li>`; return; }
+    closeList();
+    html += `<p>${inline(t)}</p>`;
+  });
+  closeList();
+  return html;
+}
 function slugify(s){ return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
 function uid(){ return 'p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function formatPrice(n){ return '₨' + Number(n||0).toLocaleString('en-PK'); }
@@ -448,13 +471,36 @@ function applyBrandingLinks(){
 ========================================================================= */
 function projectCardHtml(p){
   const grad = categoryGradient(p.category);
-  const icon = p.type==='app' ? 'smartphone' : categoryIcon(p.category);
   const cover = p.coverImage || (p.screenshots && p.screenshots[0]) || null;
+
+  if(p.type==='app'){
+    // Play Store style: square app icon + name/category beside it, rating-style meta row below.
+    return `<div class="project-card app-card">
+      <a href="#/project/${p.slug}" class="app-card-head">
+        <div class="app-icon" style="background:${grad};">${cover ? `<img src="${cover.url}" alt="${escapeHtml(p.name)}" loading="lazy">` : `<svg data-lucide="smartphone"></svg>`}</div>
+        <div class="app-card-titles">
+          <h3>${escapeHtml(p.name)}</h3>
+          <span class="app-card-cat">${escapeHtml(p.category)}</span>
+        </div>
+        <span class="badge-price ${p.isFree?'badge-free':'badge-paid'}">${p.isFree?'Free':formatPrice(p.price)}</span>
+      </a>
+      <div class="project-body">
+        <p style="font-size:.83rem;color:var(--text-muted);line-height:1.5;">${escapeHtml(p.shortDesc||'')}</p>
+        <div class="project-meta-row"><svg data-lucide="download"></svg> ${(p.downloadCount||0).toLocaleString()} downloads <svg data-lucide="hard-drive" style="margin-left:6px;"></svg> ${escapeHtml(p.fileSize||'—')}</div>
+        <div class="project-card-footer">
+          <a href="#/project/${p.slug}" class="btn btn-secondary btn-sm">Details</a>
+          ${actionButtonHtml(p, 'sm')}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Websites / other types: movie-poster style — cover image with name+blurb overlaid.
   return `<div class="project-card">
     <a href="#/project/${p.slug}" class="project-thumb" style="background:${grad};">
       <span class="badge">${escapeHtml(p.category)}</span>
       <span class="badge-price ${p.isFree?'badge-free':'badge-paid'}">${p.isFree?'Free':formatPrice(p.price)}</span>
-      ${cover ? `<img src="${cover.url}" alt="${escapeHtml(p.name)}" loading="lazy" class="project-thumb-img">` : `<svg data-lucide="${icon}"></svg>`}
+      ${cover ? `<img src="${cover.url}" alt="${escapeHtml(p.name)}" loading="lazy" class="project-thumb-img">` : `<svg data-lucide="${categoryIcon(p.category)}"></svg>`}
       <div class="project-thumb-caption">
         <h3>${escapeHtml(p.name)}</h3>
         <p>${escapeHtml(p.shortDesc||'')}</p>
@@ -532,7 +578,15 @@ const LIVESITE_PALETTE = [ ['#FF5C7A','#FF9A76'], ['#6C5CE7','#A78BFA'], ['#00B4
 function livesiteCardHtml(s, i){
   const fav = faviconUrl(s.url);
   const [c1,c2] = LIVESITE_PALETTE[i % LIVESITE_PALETTE.length];
-  return `<a class="livesite-card" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">
+  if(s.coverImage){
+    return `<a class="livesite-card livesite-card-img" href="#/live/${s.id}">
+      <div class="livesite-thumb"><img src="${s.coverImage.url}" alt="${escapeHtml(s.name)}" loading="lazy"></div>
+      <h3>${escapeHtml(s.name)}</h3>
+      <p>${escapeHtml(s.description||'')}</p>
+      <span class="livesite-visit">View details <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
+    </a>`;
+  }
+  return `<a class="livesite-card" href="#/live/${s.id}">
     <div class="livesite-icon" style="background:linear-gradient(135deg,${c1},${c2});box-shadow:0 10px 22px -8px ${c1}99;">
       <span class="livesite-icon-inner">${fav ? `<img src="${fav}" alt="" style="width:26px;height:26px;border-radius:7px;" onerror="this.remove()">` : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z"/></svg>'}</span>
     </div>
@@ -649,6 +703,31 @@ function renderLiveSitesPage(){
   renderLiveSitesSection('live-sites-grid', 0);
 }
 
+function renderLiveSiteDetail(id){
+  const s = DataStore.getLiveSites().find(x=>x.id===id);
+  const content = qs('#live-detail-content');
+  if(!s){ content.innerHTML = emptyStateHtml('Website not found', 'It may have been removed.'); return; }
+  document.title = s.name+' — '+DataStore.getSettings().siteName;
+  const heroHtml = s.coverImage
+    ? `<div class="detail-hero" style="padding:0;overflow:hidden;"><img src="${s.coverImage.url}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;"></div>`
+    : `<div class="detail-hero" style="background:linear-gradient(135deg,#3654FF,#5B82FF)"><svg data-lucide="globe"></svg></div>`;
+  content.innerHTML = `
+    <a href="#/live-sites" class="btn btn-ghost btn-sm" style="margin-bottom:20px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m7-7-7 7 7 7"/></svg> Back to live websites</a>
+    <div class="detail-grid">
+      <div>
+        ${heroHtml}
+        <div class="eyebrow-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg> Live website</div>
+        <h1 style="font-size:1.9rem;">${escapeHtml(s.name)}</h1>
+        <div class="rich-text" style="margin-top:12px;max-width:65ch;">${mdLite(s.description||'')}</div>
+      </div>
+      <div class="sidebar-card">
+        <div style="margin-bottom:14px;word-break:break-all;color:var(--text-muted);font-size:.85rem;">${escapeHtml(s.url.replace(/^https?:\/\//,''))}</div>
+        <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" class="btn btn-primary" style="width:100%;">Visit website <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="width:16px;height:16px;margin-left:4px;"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+      </div>
+    </div>`;
+  refreshIcons();
+}
+
 function renderCategoriesPage(){
   document.title = 'Categories — '+DataStore.getSettings().siteName;
   const projects = DataStore.getProjects(); const cats = DataStore.getCategories();
@@ -677,8 +756,11 @@ function renderProjectDetail(slug){
       <div>
         ${heroHtml}
         <div class="eyebrow-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> ${escapeHtml(p.category)}</div>
-        <h1 style="font-size:1.9rem;">${escapeHtml(p.name)}</h1>
-        <p style="color:var(--text-muted);margin-top:12px;line-height:1.7;max-width:65ch;">${escapeHtml(p.fullDesc||p.shortDesc||'')}</p>
+        ${p.type==='app' ? `<div style="display:flex;align-items:center;gap:14px;">
+          <div class="app-icon" style="width:56px;height:56px;border-radius:14px;background:${categoryGradient(p.category)};flex-shrink:0;">${p.coverImage ? `<img src="${p.coverImage.url}" alt="">` : `<svg data-lucide="smartphone"></svg>`}</div>
+          <h1 style="font-size:1.7rem;">${escapeHtml(p.name)}</h1>
+        </div>` : `<h1 style="font-size:1.9rem;">${escapeHtml(p.name)}</h1>`}
+        <div class="rich-text" style="margin-top:12px;max-width:65ch;">${mdLite(p.fullDesc||p.shortDesc||'')}</div>
         ${p.features && p.features.length ? `<h3 style="margin-top:28px;margin-bottom:6px;font-size:1.05rem;">What's included</h3><ul class="feature-list">${p.features.map(f=>`<li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> ${escapeHtml(f)}</li>`).join('')}</ul>` : ''}
       </div>
       <div class="sidebar-card">
@@ -1082,7 +1164,14 @@ function renderAdminLiveSites(content){
           <div class="form-group"><label for="ls-name">Website name</label><input class="form-control" id="ls-name" placeholder="e.g. My Portfolio"></div>
           <div class="form-group"><label for="ls-url">Website URL</label><input class="form-control" id="ls-url" placeholder="https://example.com"></div>
         </div>
-        <div class="form-group"><label for="ls-desc">Short description</label><textarea class="form-control" id="ls-desc" placeholder="One or two lines about this website"></textarea></div>
+        <div class="form-group"><label for="ls-desc">Description (shown in full on the detail page; keep the first line short — it's what shows on the card)</label><textarea class="form-control" id="ls-desc" placeholder="One short line about this website, then more detail below if you like"></textarea></div>
+        <div class="form-group">
+          <label>Preview image (what visitors see before clicking — a screenshot of the site works great)</label>
+          <div class="dropzone" id="ls-cover-dropzone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 8h.01M4 4h16v16H4z"/></svg><div id="ls-cover-label">Click to choose an image, or drag it here</div></div>
+          <input type="file" id="ls-cover-input" class="hidden" accept="image/*">
+          <img id="ls-cover-preview" class="hidden" style="margin-top:10px;max-height:120px;border-radius:10px;border:1px solid var(--border);" alt="">
+        </div>
+        <div id="ls-progress" style="font-size:.8rem;color:var(--text-muted);margin-bottom:10px;"></div>
         <div style="display:flex;gap:10px;">
           <button class="btn btn-primary" id="ls-save-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Add website</button>
           <button class="btn btn-secondary hidden" id="ls-cancel-btn" type="button">Cancel edit</button>
@@ -1099,17 +1188,29 @@ function renderAdminLiveSites(content){
     </div></div>`;
   refreshIcons();
   liveSiteEditingId = null;
+  let lsSelectedCover = null;
+  const lsCoverDz = qs('#ls-cover-dropzone'), lsCoverInput = qs('#ls-cover-input'), lsCoverPreview = qs('#ls-cover-preview');
+  function setLsCover(f){
+    if(!f || !f.type.startsWith('image/')){ toast('Please choose an image file.', 'error'); return; }
+    lsSelectedCover = f; qs('#ls-cover-label').textContent = f.name+' ('+(f.size/1048576).toFixed(1)+' MB) — click to change';
+    lsCoverPreview.src = URL.createObjectURL(f); lsCoverPreview.classList.remove('hidden');
+  }
+  lsCoverDz.onclick = ()=> lsCoverInput.click();
+  lsCoverInput.onchange = ()=>{ if(lsCoverInput.files[0]) setLsCover(lsCoverInput.files[0]); };
+  ['dragover','dragleave','drop'].forEach(evt=> lsCoverDz.addEventListener(evt, e=>{ e.preventDefault(); lsCoverDz.classList.toggle('drag', evt==='dragover'); if(evt==='drop' && e.dataTransfer.files[0]) setLsCover(e.dataTransfer.files[0]); }));
 
   function resetForm(){
-    liveSiteEditingId = null;
+    liveSiteEditingId = null; lsSelectedCover = null; lsCoverInput.value='';
     qs('#ls-id').value=''; qs('#ls-name').value=''; qs('#ls-url').value=''; qs('#ls-desc').value='';
+    qs('#ls-cover-label').textContent = 'Click to choose an image, or drag it here';
+    lsCoverPreview.classList.add('hidden'); lsCoverPreview.removeAttribute('src');
     qs('#ls-form-title').textContent='Add a live website';
     qs('#ls-save-btn').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Add website';
     qs('#ls-cancel-btn').classList.add('hidden');
     refreshIcons();
   }
 
-  qs('#ls-save-btn').onclick = ()=>{
+  qs('#ls-save-btn').onclick = async ()=>{
     const name = qs('#ls-name').value.trim();
     let url = qs('#ls-url').value.trim();
     const description = qs('#ls-desc').value.trim();
@@ -1118,16 +1219,34 @@ function renderAdminLiveSites(content){
     if(!/^https?:\/\//i.test(url)) url = 'https://'+url;
     try{ new URL(url); }catch(e){ toast('That URL doesn\'t look valid.', 'error'); return; }
 
-    const site = { id: liveSiteEditingId || uid(), name, url, description, createdAt: liveSiteEditingId ? (sites.find(s=>s.id===liveSiteEditingId)||{}).createdAt || new Date().toISOString() : new Date().toISOString() };
-    DataStore.saveLiveSite(site);
-    toast(liveSiteEditingId ? 'Website updated.' : 'Website added.', 'success');
-    renderAdminTab('live-sites');
+    const existing = liveSiteEditingId ? sites.find(x=>x.id===liveSiteEditingId) : null;
+    const btn = qs('#ls-save-btn'); const label = btn.innerHTML; btn.disabled = true;
+    const status = qs('#ls-progress');
+    try{
+      let coverImage = existing ? existing.coverImage || null : null;
+      if(lsSelectedCover){
+        status.textContent = 'Connecting to Google Drive…';
+        const folderId = await DriveAPI.ensureCategoryFolder('Screenshots');
+        status.textContent = 'Uploading image…';
+        const up = await DriveAPI.uploadFile(lsSelectedCover, folderId, (pct)=>{ status.textContent = 'Uploading image… '+pct+'%'; });
+        await DriveAPI.makePublic(up.id);
+        coverImage = { id: up.id, url: driveImageUrl(up.id) };
+      }
+      const site = { id: liveSiteEditingId || uid(), name, url, description, coverImage, createdAt: existing ? existing.createdAt || new Date().toISOString() : new Date().toISOString() };
+      DataStore.saveLiveSite(site);
+      toast(liveSiteEditingId ? 'Website updated.' : 'Website added.', 'success');
+      renderAdminTab('live-sites');
+    }catch(err){
+      toast('Could not save: '+(err.message||err), 'error');
+      status.textContent = ''; btn.disabled = false; btn.innerHTML = label;
+    }
   };
   qs('#ls-cancel-btn').onclick = resetForm;
   qsa('[data-edit-ls]', content).forEach(b=> b.onclick = ()=>{
     const s = sites.find(x=>x.id===b.dataset.editLs); if(!s) return;
-    liveSiteEditingId = s.id;
+    liveSiteEditingId = s.id; lsSelectedCover = null;
     qs('#ls-id').value = s.id; qs('#ls-name').value = s.name; qs('#ls-url').value = s.url; qs('#ls-desc').value = s.description||'';
+    if(s.coverImage){ lsCoverPreview.src = s.coverImage.url; lsCoverPreview.classList.remove('hidden'); qs('#ls-cover-label').textContent = 'Current image kept — click to replace it'; }
     qs('#ls-form-title').textContent = 'Edit live website';
     qs('#ls-save-btn').innerHTML = 'Save changes';
     qs('#ls-cancel-btn').classList.remove('hidden');
@@ -1388,7 +1507,7 @@ function renderAdminSettings(content){
 /* =========================================================================
    11. ROUTER
 ========================================================================= */
-const PAGE_IDS = ['home','projects','categories','live-sites','project-detail','about','contact','legal','admin-login','admin'];
+const PAGE_IDS = ['home','projects','categories','live-sites','project-detail','live-detail','about','contact','legal','admin-login','admin'];
 function showPage(id){
   PAGE_IDS.forEach(p=>{ const node = qs('#page-'+p); if(!node) return; node.classList.toggle('hidden', p!==id); });
   const active = qs('#page-'+id);
@@ -1408,6 +1527,7 @@ function router(){
   else if(parts[0]==='categories'){ showPage('categories'); renderCategoriesPage(); }
   else if(parts[0]==='live-sites'){ showPage('live-sites'); renderLiveSitesPage(); }
   else if(parts[0]==='project' && parts[1]){ showPage('project-detail'); renderProjectDetail(parts[1]); }
+  else if(parts[0]==='live' && parts[1]){ showPage('live-detail'); renderLiveSiteDetail(parts[1]); }
   else if(parts[0]==='about'){ showPage('about'); document.title='About — '+DataStore.getSettings().siteName; renderAboutStats(); }
   else if(parts[0]==='contact'){ showPage('contact'); document.title='Contact — '+DataStore.getSettings().siteName; initContactPage(); }
   else if(parts[0]==='legal'){ showPage('legal'); renderLegalPage(parts[1]||'privacy'); }

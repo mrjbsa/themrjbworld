@@ -175,6 +175,33 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 /* Project grid & cards */
 .project-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(272px,1fr)); gap:20px; }
 .project-card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); overflow:hidden; display:flex; flex-direction:column; transition:transform var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease); }
+
+/* Play-Store-style app cards: icon + name row instead of a full image overlay */
+.app-card-head{ display:flex; align-items:flex-start; gap:14px; padding:18px 18px 4px; text-decoration:none; color:inherit; }
+.app-icon{ width:64px; height:64px; border-radius:16px; flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; box-shadow:var(--shadow-sm); }
+.app-icon img{ width:100%; height:100%; object-fit:cover; }
+.app-icon svg{ width:28px; height:28px; color:#fff; }
+.app-card-titles{ flex:1; min-width:0; }
+.app-card-titles h3{ font-size:1.02rem; font-weight:700; line-height:1.3; }
+.app-card-cat{ font-size:.74rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; font-weight:600; }
+.app-card .badge-price{ position:static; flex-shrink:0; }
+
+/* Live-site cards with a preview image */
+.livesite-card-img{ padding:0; }
+.livesite-card-img .livesite-thumb{ height:150px; overflow:hidden; border-radius:var(--radius-lg) var(--radius-lg) 0 0; }
+.livesite-card-img .livesite-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+.livesite-card-img h3{ margin:14px 20px 0; }
+.livesite-card-img p{ margin:6px 20px 0; }
+.livesite-card-img .livesite-visit{ margin:14px 20px 20px; }
+.livesite-card p{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+
+/* Clean rendered description text (from mdLite) on detail pages */
+.rich-text{ color:var(--text-muted); line-height:1.7; }
+.rich-text h3,.rich-text h4,.rich-text h5{ color:var(--text); margin:18px 0 6px; font-weight:700; }
+.rich-text h3{ font-size:1.1rem; } .rich-text h4{ font-size:1rem; } .rich-text h5{ font-size:.95rem; }
+.rich-text p{ margin-bottom:10px; }
+.rich-text ul{ margin:4px 0 12px 1.2em; } .rich-text li{ margin-bottom:5px; }
+.rich-text b{ color:var(--text); }
 .project-card:hover{ transform:translateY(-4px); box-shadow:var(--shadow-md); border-color:var(--border-strong); }
 .project-thumb{ height:190px; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; }
 .project-thumb svg{ width:38px; height:38px; color:rgba(255,255,255,.92); }
