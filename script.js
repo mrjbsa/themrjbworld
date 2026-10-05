@@ -2,22 +2,16 @@
 'use strict';
 
 /* =========================================================================
-   0. CLOUD DATABASE — ONE-TIME SETUP
-   Without this, every uploaded project only shows up in YOUR OWN browser
-   (localStorage never leaves your device). To make projects visible to
-   every visitor on every device:
-     1. Log into Admin → connect Google Drive → upload/save one project.
-     2. Go to Admin → Settings → "Cloud Database" and copy the File ID shown.
-     3. Paste that ID below (between the quotes) and re-upload this script.js
-        to your hosting. From then on every visitor sees the same live data.
+   0. CLOUD DATABASE (read-only) — shared Drive file every visitor reads
 ========================================================================= */
+/* PUBLIC SITE — read-only. */
 const CLOUD_DB_FILE_ID = '12iedF9XA-M5Vr188iT9AXgkactijkcSZ'; // hardcoded — every visitor now reads this shared Drive database
 const CLOUD_API_KEY = 'AIzaSyB5xb8ydiKRv0GCu73Hfyw7hPevmoAfeNs'; // public, read-only Drive API key
 
 /* =========================================================================
    1. STORAGE KEYS & DEFAULTS
 ========================================================================= */
-const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', ADMIN:'mjbw_admin_session', ADMIN_CREDS:'mjbw_admin_creds', DRIVE_FOLDERS:'mjbw_drive_folders', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites', BANNERS:'mjbw_banners', DIRTY:'mjbw_cloud_dirty' };
+const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites', BANNERS:'mjbw_banners' };
 
 const DEFAULT_CATEGORIES = ['Websites','Web Applications','Mobile Apps','Tools & Scripts','Other Projects'];
 
@@ -89,10 +83,7 @@ const DEFAULT_SETTINGS = {
   siteName:'The Mr JB World',
   contactEmail:'mrjbsa.official@outlook.com',
   youtubeUrl:'https://www.youtube.com/@themrjbworld',
-  currency:'PKR',
-  driveClientId:'669688636685-lm6fntdu1cm5h1r0adat5acfes2sm0gr.apps.googleusercontent.com',
-  driveRootFolderId:'',
-  allowedAdminEmail:'mrjbsa.313@gmail.com'
+  currency:'PKR'
 };
 
 function seedIfEmpty(){
@@ -106,20 +97,9 @@ function seedIfEmpty(){
     Object.keys(DEFAULT_SETTINGS).forEach(k=>{ if(s[k]===undefined){ s[k]=DEFAULT_SETTINGS[k]; changed=true; } });
     if(changed) localStorage.setItem(DB.SETTINGS, JSON.stringify(s));
   }
-  // Single fixed admin identity — seeded once, no public "create account" form ever exists.
-  // Default login: username "mrjb" (password hash below). Change it from
-  // Admin → Settings → Change Password after signing in.
-  const DEFAULT_ADMIN_HASH = '8abb17919f7499cb6880e3441fab114077b57a06eb129d780cf035a425e7a2dc';
-  const OLD_DEFAULT_ADMIN_HASH = '2e91ff8277625ff6780200952ef5609536d38e53a7016641958ac9873417fd83';
-  // Credentials version: bumping this resets every browser's saved admin login
-  // back to the default below (one time), so a stale/forgotten saved password can never lock you out.
-  const CREDS_VERSION = 'v3';
-  if(localStorage.getItem('mjbw_creds_version') !== CREDS_VERSION){
-    localStorage.setItem(DB.ADMIN_CREDS, JSON.stringify({ username:'mrjb', hash:DEFAULT_ADMIN_HASH }));
-    localStorage.setItem('mjbw_creds_version', CREDS_VERSION);
-  }
 }
 seedIfEmpty();
+
 
 /* =========================================================================
    2. DATA STORE
@@ -128,36 +108,25 @@ const DataStore = {
   getProjects(){ return JSON.parse(localStorage.getItem(DB.PROJECTS)||'[]'); },
   getProjectBySlug(slug){ return this.getProjects().find(p=>p.slug===slug)||null; },
   getProjectById(id){ return this.getProjects().find(p=>p.id===id)||null; },
-  saveProject(project){ const all=this.getProjects(); const idx=all.findIndex(p=>p.id===project.id); if(idx>-1) all[idx]=project; else all.unshift(project); localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); CloudSync.schedulePush(); return project; },
-  deleteProject(id){ localStorage.setItem(DB.PROJECTS, JSON.stringify(this.getProjects().filter(p=>p.id!==id))); CloudSync.schedulePush(); },
   incrementDownload(id){ const all=this.getProjects(); const p=all.find(x=>x.id===id); if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); } },
   getCategories(){ return JSON.parse(localStorage.getItem(DB.CATEGORIES)||'[]'); },
-  saveCategories(cats){ localStorage.setItem(DB.CATEGORIES, JSON.stringify(cats)); CloudSync.schedulePush(); },
   getSettings(){ return JSON.parse(localStorage.getItem(DB.SETTINGS)||'{}'); },
-  saveSettings(s){ localStorage.setItem(DB.SETTINGS, JSON.stringify(s)); },
-  getDriveFolders(){ return JSON.parse(localStorage.getItem(DB.DRIVE_FOLDERS)||'{}'); },
-  saveDriveFolders(map){ localStorage.setItem(DB.DRIVE_FOLDERS, JSON.stringify(map)); },
   getBanners(){ return JSON.parse(localStorage.getItem(DB.BANNERS)||'[]'); },
-  saveBanners(list){ localStorage.setItem(DB.BANNERS, JSON.stringify(list)); CloudSync.schedulePush(); },
-  getLiveSites(){ return JSON.parse(localStorage.getItem(DB.LIVE_SITES)||'[]'); },
-  saveLiveSite(site){ const all=this.getLiveSites(); const idx=all.findIndex(s=>s.id===site.id); if(idx>-1) all[idx]=site; else all.unshift(site); localStorage.setItem(DB.LIVE_SITES, JSON.stringify(all)); CloudSync.schedulePush(); return site; },
-  deleteLiveSite(id){ localStorage.setItem(DB.LIVE_SITES, JSON.stringify(this.getLiveSites().filter(s=>s.id!==id))); CloudSync.schedulePush(); }
+  getLiveSites(){ return JSON.parse(localStorage.getItem(DB.LIVE_SITES)||'[]'); }
 };
+
 
 /* =========================================================================
    2b. CLOUD SYNC — Google Drive as the shared database
    Every visitor's browser PULLS the shared JSON file (public, read-only,
-   via CLOUD_API_KEY — no login needed). Only the logged-in admin, once
-   Google Drive is connected, PUSHES updates back up after any save.
+   via CLOUD_API_KEY — no login needed).
 ========================================================================= */
 const CloudSync = {
-  _pushTimer: null,
-  getFileId(){ return CLOUD_DB_FILE_ID || (DataStore.getSettings().cloudFileId || ''); },
+  getFileId(){ return CLOUD_DB_FILE_ID || ''; },
 
   async pull(){
     const fileId = this.getFileId();
     if(!fileId || !CLOUD_API_KEY) return false;
-    if(localStorage.getItem(DB.DIRTY)==='1') return false; // this browser has newer unsynced admin changes — don't overwrite them
     try{
       const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${CLOUD_API_KEY}`, { cache:'no-store' });
       if(!res.ok) return false;
@@ -168,206 +137,9 @@ const CloudSync = {
       if(Array.isArray(data.banners)) localStorage.setItem(DB.BANNERS, JSON.stringify(data.banners));
       return true;
     }catch(e){ console.warn('Cloud pull failed:', e); return false; }
-  },
-
-  schedulePush(){
-    if(typeof AuthService!=='undefined' && AuthService.isLoggedIn()) localStorage.setItem(DB.DIRTY,'1'); // admin change not yet on Drive; cleared after a successful push
-    if(typeof DriveAPI==='undefined' || !DriveAPI.isConnected()) return; // only an admin session with Drive connected pushes
-    clearTimeout(this._pushTimer);
-    this._pushTimer = setTimeout(()=>{ this.push().catch(e=>console.warn('Cloud push failed:', e)); }, 800);
-  },
-
-  async push(){
-    const payload = JSON.stringify({
-      projects: DataStore.getProjects(),
-      categories: DataStore.getCategories(),
-      liveSites: DataStore.getLiveSites(),
-      banners: DataStore.getBanners(),
-      updatedAt: new Date().toISOString()
-    });
-    let fileId = this.getFileId();
-    const token = await DriveAPI.ensureToken();
-
-    if(fileId){
-      const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-        method:'PATCH',
-        headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
-        body: payload
-      });
-      if(res.ok){ localStorage.removeItem(DB.DIRTY); return fileId; }
-      fileId = ''; // file missing/inaccessible — recreate below
-    }
-
-    const rootId = await DriveAPI.ensureRootFolder();
-    const boundary = 'mjbwdb-'+Math.random().toString(36).slice(2);
-    const metadata = { name:'mjbw_database.json', parents:[rootId], mimeType:'application/json' };
-    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${payload}\r\n--${boundary}--`;
-    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-      method:'POST',
-      headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'multipart/related; boundary='+boundary },
-      body
-    });
-    if(!res.ok) throw new Error('Cloud database save failed.');
-    const data = await res.json();
-    await DriveAPI.makePublic(data.id);
-    const settings = DataStore.getSettings();
-    settings.cloudFileId = data.id;
-    DataStore.saveSettings(settings);
-    localStorage.removeItem(DB.DIRTY);
-    return data.id;
   }
 };
 
-/* =========================================================================
-   3. GOOGLE DRIVE INTEGRATION (admin-only)
-   Uses Google Identity Services (token flow) + Drive v3 REST API directly
-   from the browser. Scope is drive.file — the app can only see/manage
-   files and folders that it itself creates, never the admin's whole Drive.
-========================================================================= */
-const DriveAPI = {
-  tokenClient:null,
-  accessToken:null,
-  tokenExpiry:0,
-
-  isReady(){ return typeof google !== 'undefined' && google.accounts && google.accounts.oauth2; },
-  isConnected(){ return !!this.accessToken && Date.now() < this.tokenExpiry; },
-
-  connect(){
-    return new Promise((resolve, reject)=>{
-      if(!this.isReady()){ reject(new Error('Google sign-in script has not loaded yet. Check your internet connection and try again.')); return; }
-      const settings = DataStore.getSettings();
-      if(!settings.driveClientId){ reject(new Error('No Google Drive Client ID is set in Settings yet.')); return; }
-      try{
-        this.tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: settings.driveClientId,
-          scope: 'https://www.googleapis.com/auth/drive.file',
-          callback:(resp)=>{
-            if(resp && resp.access_token){
-              this.accessToken = resp.access_token;
-              this.tokenExpiry = Date.now() + ((resp.expires_in||3300)*1000);
-              resolve(resp);
-            } else { reject(new Error('Google did not return an access token.')); }
-          },
-          error_callback:(err)=>{ reject(new Error(err && err.message ? err.message : 'Google sign-in was cancelled or blocked.')); }
-        });
-        this.tokenClient.requestAccessToken({ prompt: this.accessToken ? '' : 'consent' });
-      }catch(e){ reject(e); }
-    });
-  },
-
-  async ensureToken(){
-    if(this.isConnected()) return this.accessToken;
-    await this.connect();
-    return this.accessToken;
-  },
-
-  async apiFetch(url, options){
-    const token = await this.ensureToken();
-    const res = await fetch(url, Object.assign({}, options, { headers: Object.assign({ Authorization:'Bearer '+token }, (options&&options.headers)||{}) }));
-    if(!res.ok){ const t = await res.text(); throw new Error('Google Drive error: '+res.status+' — '+t.slice(0,200)); }
-    return res.status===204 ? null : res.json();
-  },
-
-  async findFolder(name, parentId){
-    const q = encodeURIComponent(`name='${name.replace(/'/g,"\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false` + (parentId?` and '${parentId}' in parents`:''));
-    const data = await this.apiFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`);
-    return (data.files && data.files[0]) || null;
-  },
-
-  async createFolder(name, parentId){
-    const metadata = { name, mimeType:'application/vnd.google-apps.folder' };
-    if(parentId) metadata.parents = [parentId];
-    return this.apiFetch('https://www.googleapis.com/drive/v3/files?fields=id,name', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(metadata) });
-  },
-
-  async ensureRootFolder(){
-    const settings = DataStore.getSettings();
-    if(settings.driveRootFolderId){
-      try{ await this.apiFetch(`https://www.googleapis.com/drive/v3/files/${settings.driveRootFolderId}?fields=id`); return settings.driveRootFolderId; }
-      catch(e){ /* fall through and recreate */ }
-    }
-    let folder = await this.findFolder('Mr JB World Uploads', null);
-    if(!folder) folder = await this.createFolder('Mr JB World Uploads', null);
-    settings.driveRootFolderId = folder.id;
-    DataStore.saveSettings(settings);
-    return folder.id;
-  },
-
-  async ensureCategoryFolder(categoryName){
-    const map = DataStore.getDriveFolders();
-    if(map[categoryName]) return map[categoryName];
-    const rootId = await this.ensureRootFolder();
-    let folder = await this.findFolder(categoryName, rootId);
-    if(!folder) folder = await this.createFolder(categoryName, rootId);
-    map[categoryName] = folder.id;
-    DataStore.saveDriveFolders(map);
-    return folder.id;
-  },
-
-  async uploadFile(file, folderId, onProgress){
-    const token = await this.ensureToken();
-    const metadata = { name: file.name, parents:[folderId] };
-    const boundary = 'mjbw-'+Math.random().toString(36).slice(2);
-    const delimiter = `\r\n--${boundary}\r\n`;
-    const closeDelim = `\r\n--${boundary}--`;
-    const metaPart = delimiter + 'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(metadata);
-    const fileHeader = delimiter + `Content-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`;
-
-    const bodyBlob = new Blob([metaPart, fileHeader, file, closeDelim]);
-
-    return new Promise((resolve, reject)=>{
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size');
-      xhr.setRequestHeader('Authorization', 'Bearer '+token);
-      xhr.setRequestHeader('Content-Type', 'multipart/related; boundary='+boundary);
-      xhr.upload.onprogress = (e)=>{ if(e.lengthComputable && onProgress) onProgress(Math.round((e.loaded/e.total)*100)); };
-      xhr.onload = ()=>{
-        if(xhr.status>=200 && xhr.status<300){ resolve(JSON.parse(xhr.responseText)); }
-        else reject(new Error('Upload failed ('+xhr.status+'): '+xhr.responseText.slice(0,200)));
-      };
-      xhr.onerror = ()=> reject(new Error('Network error during upload.'));
-      xhr.send(bodyBlob);
-    });
-  },
-
-  async makePublic(fileId){
-    await this.apiFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ role:'reader', type:'anyone' }) });
-    return `https://drive.google.com/uc?export=download&id=${fileId}`;
-  },
-
-  async deleteFile(fileId){
-    try{ await this.apiFetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, { method:'DELETE' }); }catch(e){ /* ignore */ }
-  }
-};
-
-/* =========================================================================
-   4. ADMIN AUTH (local to this browser — see Settings for details)
-========================================================================= */
-async function sha256(text){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-const AuthService = {
-  async changePassword(currentPassword, newUsername, newPassword){
-    const creds = JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'null');
-    if(!creds) throw new Error('No admin account found.');
-    const currentHash = await sha256(currentPassword+'::'+creds.username.toLowerCase());
-    if(currentHash!==creds.hash) throw new Error('Current password is incorrect.');
-    const username = (newUsername||creds.username).trim() || creds.username;
-    const hash = await sha256(newPassword+'::'+username.toLowerCase());
-    localStorage.setItem(DB.ADMIN_CREDS, JSON.stringify({ username, hash }));
-  },
-  async login(username, password){
-    const creds = JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'null');
-    if(!creds) return false;
-    const hash = await sha256(password+'::'+username.toLowerCase());
-    if(creds.username.toLowerCase()===username.toLowerCase() && creds.hash===hash){ return true; }
-    return false;
-  },
-  grantSession(){ sessionStorage.setItem(DB.ADMIN,'1'); },
-  isLoggedIn(){ return sessionStorage.getItem(DB.ADMIN)==='1'; },
-  logout(){ sessionStorage.removeItem(DB.ADMIN); }
-};
 
 /* =========================================================================
    5. UTILITIES
@@ -425,6 +197,7 @@ function mailtoLink(project){
   return `mailto:${settings.contactEmail}?subject=${subject}&body=${body}`;
 }
 
+
 /* =========================================================================
    6. THEME
 ========================================================================= */
@@ -444,16 +217,7 @@ qsa('[data-close-menu]').forEach(el=> el.addEventListener('click', closeMobileMe
 function wireSearch(input){ input.addEventListener('keydown', e=>{ if(e.key==='Enter' && input.value.trim()){ location.hash = '#/projects?q='+encodeURIComponent(input.value.trim()); closeMobileMenu(); } }); }
 wireSearch(qs('#header-search-input')); wireSearch(qs('#mobile-search-input'));
 
-/* Secret admin access: click the footer copyright text 5 times within 2.5s */
-(function(){
-  let clicks=0, timer=null;
-  qs('#secret-trigger').addEventListener('click', ()=>{
-    clicks++;
-    clearTimeout(timer);
-    timer = setTimeout(()=>{ clicks=0; }, 2500);
-    if(clicks>=5){ clicks=0; location.hash = AuthService.isLoggedIn() ? '#/admin/overview' : '#/admin-login'; }
-  });
-})();
+
 
 /* Branding + contact links applied everywhere */
 function applyBrandingLinks(){
@@ -465,6 +229,7 @@ function applyBrandingLinks(){
   const contactEmailLink = qs('#contact-email-link'); if(contactEmailLink){ contactEmailLink.href='mailto:'+s.contactEmail; contactEmailLink.textContent = s.contactEmail; }
   const contactYoutubeLink = qs('#contact-youtube-link'); if(contactYoutubeLink) contactYoutubeLink.href = s.youtubeUrl;
 }
+
 
 /* =========================================================================
    7. PROJECT CARD RENDERING (with Download / Contact / Install logic)
@@ -568,6 +333,7 @@ function runInstallAnimation(btn){
   }, 1500);
 }
 
+
 /* =========================================================================
    8. PUBLIC PAGE RENDERERS
 ========================================================================= */
@@ -575,14 +341,49 @@ function faviconUrl(url){
   try{ const u = new URL(url); return `https://www.google.com/s2/favicons?sz=64&domain=${u.hostname}`; }catch(e){ return ''; }
 }
 const LIVESITE_PALETTE = [ ['#FF5C7A','#FF9A76'], ['#6C5CE7','#A78BFA'], ['#00B4D8','#48CAE4'], ['#00C875','#5EEAD4'], ['#FFB020','#FFD166'], ['#FF6FB5','#FF9ECF'] ];
+function livesiteImages(s){
+  const list = [];
+  if(s.coverImage && s.coverImage.url) list.push(s.coverImage);
+  (s.screenshots||[]).forEach(x=>{ if(x && x.url && !list.some(y=>y.id===x.id)) list.push(x); });
+  return list;
+}
+function injectLiveShowcaseStyles(){
+  if(document.getElementById('ls-showcase-css')) return;
+  const st = document.createElement('style'); st.id = 'ls-showcase-css';
+  st.textContent = `
+  .livesite-card-img{overflow:hidden;--box:230px;}
+  .ls-bar{display:flex;align-items:center;gap:6px;padding:8px 12px;font-size:11.5px;color:var(--text-muted,#667085);border:1px solid var(--border,#e4e7ef);border-bottom:0;border-radius:12px 12px 0 0;background:var(--bg-soft,rgba(127,127,127,.06));}
+  .ls-bar i{width:8px;height:8px;border-radius:50%;background:#ff5f57;flex:none}
+  .ls-bar i:nth-child(2){background:#febc2e}.ls-bar i:nth-child(3){background:#28c840}
+  .ls-bar span{margin-left:6px;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:rgba(127,127,127,.12);border-radius:6px;padding:2px 8px}
+  .ls-shot{position:relative;height:var(--box);overflow:hidden;border:1px solid var(--border,#e4e7ef);border-radius:0 0 12px 12px;margin-bottom:14px;background:rgba(127,127,127,.08)}
+  /* tall full-page screenshot(s) stacked in one strip; the strip scrolls inside the box */
+  .ls-strip{transform:translateY(0);transition:transform calc(var(--dur,6s) * .6) ease-in-out;will-change:transform}
+  .ls-strip img{display:block;width:100%;height:auto}
+  @media (hover:hover){
+    .livesite-card-img:hover .ls-strip{transform:translateY(calc(-100% + var(--box)));transition-duration:var(--dur,6s)}
+    .livesite-card-img:hover .ls-badge{opacity:0}
+  }
+  .livesite-card-img:focus-visible .ls-strip,.livesite-card-img.is-playing .ls-strip{transform:translateY(calc(-100% + var(--box)));transition-duration:var(--dur,6s)}
+  .livesite-card-img.is-playing .ls-badge{opacity:0}
+  .livesite-card-img.no-scroll .ls-strip{transform:none !important}
+  .ls-badge{position:absolute;left:10px;bottom:10px;z-index:2;pointer-events:none;font-size:11px;font-weight:600;padding:5px 10px;border-radius:99px;color:#fff;background:rgba(11,14,20,.72);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);transition:opacity .3s ease}
+  @media (prefers-reduced-motion:reduce){.ls-shot{overflow-y:auto}.ls-strip{transition:none !important;transform:none !important}.ls-badge{display:none}}`;
+  document.head.appendChild(st);
+}
 function livesiteCardHtml(s, i){
   const fav = faviconUrl(s.url);
   const [c1,c2] = LIVESITE_PALETTE[i % LIVESITE_PALETTE.length];
-  if(s.coverImage){
+  const imgs = livesiteImages(s);
+  if(imgs.length){
+    const host = escapeHtml(s.url.replace(/^https?:\/\//,'').replace(/\/$/,''));
+    const touch = window.matchMedia && matchMedia('(hover: none)').matches;
     return `<a class="livesite-card livesite-card-img" href="#/live/${s.id}">
-      <div class="livesite-thumb"><img src="${s.coverImage.url}" alt="${escapeHtml(s.name)}" loading="lazy"></div>
+      <div class="ls-bar"><i></i><i></i><i></i><span>${host}</span></div>
+      <div class="ls-shot"><div class="ls-strip">${imgs.map(im=>`<img src="${im.url}" alt="${escapeHtml(s.name)} preview" loading="lazy">`).join('')}</div>
+        <span class="ls-badge">${touch ? 'Tap to preview' : 'Hover to preview'}</span></div>
       <h3>${escapeHtml(s.name)}</h3>
-      <p>${escapeHtml(s.description||'')}</p>
+      <p>${escapeHtml((s.description||'').split('\n')[0])}</p>
       <span class="livesite-visit">View details <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
     </a>`;
   }
@@ -595,6 +396,31 @@ function livesiteCardHtml(s, i){
     <div class="livesite-url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg> ${escapeHtml(s.url.replace(/^https?:\/\//,''))}</div>
     <span class="livesite-visit">Visit website <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
   </a>`;
+}
+/* Preview scroll speed: duration is calculated from the screenshot height, so tall and
+   short pages scroll at a similar speed. Change these 3 numbers to tune it. */
+const LS_PX_PER_SECOND = 150, LS_MIN_SECONDS = 3, LS_MAX_SECONDS = 20;
+function attachLiveSlideshow(container){
+  injectLiveShowcaseStyles();
+  const touch = window.matchMedia && matchMedia('(hover: none)').matches;
+  qsa('.livesite-card-img', container).forEach(card=>{
+    const strip = qs('.ls-strip', card), box = qs('.ls-shot', card);
+    if(!strip || !box) return;
+    const update = ()=>{
+      if(!strip.offsetHeight) return;
+      const distance = strip.offsetHeight - box.clientHeight;
+      if(distance <= 0){ card.classList.add('no-scroll'); return; }
+      card.classList.remove('no-scroll');
+      const sec = Math.min(LS_MAX_SECONDS, Math.max(LS_MIN_SECONDS, distance / LS_PX_PER_SECOND));
+      card.style.setProperty('--dur', sec.toFixed(2)+'s');
+    };
+    qsa('img', strip).forEach(im=>{ im.addEventListener('load', update); });
+    update();
+    if('ResizeObserver' in window){ const ro = new ResizeObserver(update); ro.observe(strip); ro.observe(box); }
+    if(touch && 'IntersectionObserver' in window){
+      new IntersectionObserver(es=> es.forEach(e=> card.classList.toggle('is-playing', e.isIntersecting)), {threshold:.65}).observe(card);
+    }
+  });
 }
 function attachTiltEffect(container){
   qsa('.livesite-card', container).forEach(card=>{
@@ -614,9 +440,10 @@ function renderLiveSitesSection(containerId, limit){
   if(!el) return;
   const section = el.closest('#home-live-sites-section');
   if(section) section.classList.toggle('hidden', sites.length===0);
-  el.innerHTML = list.length ? list.map((s,i)=>livesiteCardHtml(s,i)).join('') : emptyStateHtml('No live websites added yet', 'They will appear here as soon as they are added from the admin panel.');
+  el.innerHTML = list.length ? list.map((s,i)=>livesiteCardHtml(s,i)).join('') : emptyStateHtml('No live websites added yet', 'They will appear here soon.');
   refreshIcons();
   attachTiltEffect(el);
+  attachLiveSlideshow(el);
 }
 
 function renderHome(){
@@ -708,8 +535,9 @@ function renderLiveSiteDetail(id){
   const content = qs('#live-detail-content');
   if(!s){ content.innerHTML = emptyStateHtml('Website not found', 'It may have been removed.'); return; }
   document.title = s.name+' — '+DataStore.getSettings().siteName;
-  const heroHtml = s.coverImage
-    ? `<div class="detail-hero" style="padding:0;overflow:hidden;"><img src="${s.coverImage.url}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;"></div>`
+  const lsImgs = livesiteImages(s);
+  const heroHtml = lsImgs.length
+    ? buildSliderHTML(lsImgs.map(x=>({ url:x.url, alt:s.name })), { height:'340px' })
     : `<div class="detail-hero" style="background:linear-gradient(135deg,#3654FF,#5B82FF)"><svg data-lucide="globe"></svg></div>`;
   content.innerHTML = `
     <a href="#/live-sites" class="btn btn-ghost btn-sm" style="margin-bottom:20px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m7-7-7 7 7 7"/></svg> Back to live websites</a>
@@ -726,6 +554,7 @@ function renderLiveSiteDetail(id){
       </div>
     </div>`;
   refreshIcons();
+  wireSlider(qs('#live-detail-content .img-slider'), 4000);
 }
 
 function renderCategoriesPage(){
@@ -736,7 +565,7 @@ function renderCategoriesPage(){
     return `<a href="#/projects?category=${encodeURIComponent(c)}" class="folder-card">
       <div class="folder-icon" style="background:${categoryGradient(c)}"><svg data-lucide="${categoryIcon(c)}"></svg></div>
       <b>${escapeHtml(c)}</b><span>${count} project${count===1?'':'s'}</span></a>`;
-  }).join('') : emptyStateHtml('No categories yet','Categories are created automatically when the admin uploads a project.');
+  }).join('') : emptyStateHtml('No categories yet','Categories will appear here soon.');
   refreshIcons();
 }
 
@@ -808,706 +637,11 @@ function renderLegalPage(slug){
   qs('#legal-content').innerHTML = `<h1 style="margin-bottom:20px;">${page.title}</h1><div style="color:var(--text-muted);line-height:1.7;display:flex;flex-direction:column;gap:14px;">${page.body}</div>`;
 }
 
-/* =========================================================================
-   9. ADMIN LOGIN / SETUP
-========================================================================= */
-function renderAdminLoginPage(){
-  qs('#admin-login-error').style.display='none';
-  qs('#login-user').value=''; qs('#login-pass').value='';
-  qs('#admin-login-form').classList.remove('hidden');
-  qs('#admin-google-step').classList.add('hidden');
-  qs('#gsi-error').style.display='none';
-}
-function decodeJwt(token){
-  const b64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
-  const json = decodeURIComponent(atob(b64).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-  return JSON.parse(json);
-}
-function showGoogleVerifyStep(){
-  qs('#admin-login-form').classList.add('hidden');
-  qs('#admin-google-step').classList.remove('hidden');
-  const settings = DataStore.getSettings();
-  if(typeof google==='undefined' || !google.accounts || !google.accounts.id){
-    qs('#gsi-error').textContent = "Google sign-in script hasn't loaded — check your internet connection and refresh.";
-    qs('#gsi-error').style.display='block';
-    return;
-  }
-  if(!settings.driveClientId){
-    qs('#gsi-error').textContent = 'No Google Client ID is set in Settings yet.';
-    qs('#gsi-error').style.display='block';
-    return;
-  }
-  google.accounts.id.initialize({ client_id: settings.driveClientId, callback: handleGoogleCredential, auto_select:false });
-  google.accounts.id.renderButton(qs('#gsi-button-container'), { theme: document.documentElement.getAttribute('data-theme')==='dark'?'filled_black':'outline', size:'large', shape:'pill', text:'signin_with' });
-  google.accounts.id.prompt();
-}
-function handleGoogleCredential(response){
-  const err = qs('#gsi-error');
-  try{
-    const payload = decodeJwt(response.credential);
-    const allowed = (DataStore.getSettings().allowedAdminEmail||'').toLowerCase().trim();
-    if(payload.email && payload.email_verified && payload.email.toLowerCase()===allowed){
-      err.style.display='none';
-      AuthService.grantSession();
-      toast('Google account verified — welcome back.', 'success');
-      location.hash = '#/admin/overview';
-    }else{
-      err.textContent = `This Google account (${payload.email||'unknown'}) isn't authorized for admin access.`;
-      err.style.display='block';
-      if(google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
-    }
-  }catch(e){ err.textContent = 'Could not verify the Google account. Please try again.'; err.style.display='block'; }
-}
-qs('#gsi-back-btn').addEventListener('click', ()=>{
-  qs('#admin-google-step').classList.add('hidden');
-  qs('#admin-login-form').classList.remove('hidden');
-});
-qs('#admin-login-form').addEventListener('submit', async e=>{
-  e.preventDefault();
-  const btn = qs('#admin-login-btn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Checking…';
-  const ok = await AuthService.login(qs('#login-user').value.trim(), qs('#login-pass').value);
-  btn.disabled=false; btn.innerHTML='Sign in';
-  if(ok){ qs('#admin-login-error').style.display='none'; showGoogleVerifyStep(); } else { qs('#admin-login-error').style.display='block'; }
-});
-qs('#admin-logout-link').addEventListener('click', e=>{ e.preventDefault(); AuthService.logout(); location.hash='#/home'; });
-
-/* =========================================================================
-   10. ADMIN DASHBOARD
-========================================================================= */
-const adminState = { tab:'overview' };
-
-function setActiveAdminNav(){ qsa('#admin-sidebar a[data-tab]').forEach(a=> a.classList.toggle('active', a.dataset.tab===adminState.tab)); }
-
-function renderAdminDashboard(){
-  document.title = 'Admin — '+DataStore.getSettings().siteName;
-  renderAdminTab(adminState.tab);
-  setActiveAdminNav();
-}
-
-function renderAdminTab(tab){
-  const content = qs('#admin-main-content');
-  if(tab==='overview') renderAdminOverview(content);
-  else if(tab==='projects') renderAdminProjects(content);
-  else if(tab==='add-project') renderAdminAddProject(content);
-  else if(tab==='categories') renderAdminCategories(content);
-  else if(tab==='live-sites') renderAdminLiveSites(content);
-  else if(tab==='slider') renderAdminSlider(content);
-  else if(tab==='downloads') renderAdminDownloads(content);
-  else if(tab==='settings') renderAdminSettings(content);
-  else renderAdminOverview(content);
-}
-
-function renderAdminOverview(content){
-  const projects = DataStore.getProjects();
-  const totalDownloads = projects.reduce((s,p)=>s+(p.downloadCount||0),0);
-  const paid = projects.filter(p=>!p.isFree).length;
-  const driveConnected = DriveAPI.isConnected();
-  content.innerHTML = `
-    <div class="admin-topline"><h2>Overview</h2><a href="#/admin/add-project" class="btn btn-primary btn-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Upload project</a></div>
-    ${driveConnected ? '' : `<div class="warn-banner info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg> Google Drive isn't connected yet this session. Connect it from <a href="#/admin/settings" style="text-decoration:underline;">Settings</a> before uploading a new project.</div>`}
-    <div class="kpi-grid">
-      <div class="kpi-card"><svg data-lucide="folder"></svg><b>${projects.length}</b><span>Total projects</span></div>
-      <div class="kpi-card"><svg data-lucide="gift"></svg><b>${projects.filter(p=>p.isFree).length}</b><span>Free projects</span></div>
-      <div class="kpi-card"><svg data-lucide="badge-dollar-sign"></svg><b>${paid}</b><span>Premium projects</span></div>
-      <div class="kpi-card"><svg data-lucide="download"></svg><b>${totalDownloads.toLocaleString()}</b><span>Total downloads</span></div>
-    </div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3>Recent uploads</h3></div>
-      <div class="admin-panel-body">${projects.length ? projects.slice(0,5).map(p=>`<div class="amc-row" style="border-bottom:1px solid var(--border);padding:10px 0;"><span>${escapeHtml(p.name)}</span><b>${formatDate(p.createdAt)}</b></div>`).join('') : '<p style="color:var(--text-muted);">No projects yet — upload your first one.</p>'}</div>
-    </div>`;
-  refreshIcons();
-}
-
-function renderAdminProjects(content){
-  const projects = DataStore.getProjects();
-  content.innerHTML = `
-    <div class="admin-topline"><h2>Projects</h2><a href="#/admin/add-project" class="btn btn-primary btn-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Upload project</a></div>
-    <div class="admin-panel"><div class="admin-panel-body">
-      ${projects.length ? `<div class="responsive-table"><table class="admin-table"><thead><tr><th>Project</th><th>Category</th><th>Price</th><th>Downloads</th><th></th></tr></thead><tbody>
-        ${projects.map(p=>`<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.category)}</td><td>${p.isFree?'Free':formatPrice(p.price)}</td><td>${(p.downloadCount||0).toLocaleString()}</td>
-        <td class="row-actions"><button class="btn btn-secondary btn-sm" data-view="${p.id}">View</button><button class="btn btn-danger btn-sm" data-del="${p.id}">Delete</button></td></tr>`).join('')}
-      </tbody></table></div>
-      <div class="admin-cards-mobile">${projects.map(p=>`<div class="admin-mobile-card"><div class="amc-row"><b>${escapeHtml(p.name)}</b><span>${p.isFree?'Free':formatPrice(p.price)}</span></div><div class="amc-row"><span>${escapeHtml(p.category)}</span><span>${(p.downloadCount||0)} dl</span></div><div class="row-actions" style="margin-top:8px;"><button class="btn btn-secondary btn-sm" data-view="${p.id}">View</button><button class="btn btn-danger btn-sm" data-del="${p.id}">Delete</button></div></div>`).join('')}</div>`
-      : emptyStateHtml('No projects yet', 'Upload your first project to see it here.')}
-    </div></div>`;
-  refreshIcons();
-  qsa('[data-view]', content).forEach(b=> b.onclick = ()=>{ const p=DataStore.getProjectById(b.dataset.view); if(p) window.open('#/project/'+p.slug,'_blank'); });
-  qsa('[data-del]', content).forEach(b=> b.onclick = ()=>{
-    const p = DataStore.getProjectById(b.dataset.del);
-    confirmDialog(`Delete "${p.name}"? This removes it from the site (the file stays in your Google Drive).`, ()=>{
-      DataStore.deleteProject(p.id); toast('Project deleted.', 'success'); renderAdminTab('projects');
-    }, 'Delete');
-  });
-}
-
-function renderAdminAddProject(content){
-  const cats = DataStore.getCategories();
-  content.innerHTML = `
-    <div class="admin-topline"><h2>Upload a new project</h2></div>
-    <div class="info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg> The file you pick below uploads straight to your own Google Drive (into a folder named after the category). Nothing is stored on this website itself — it only remembers the download link.</div>
-    <div class="admin-panel"><div class="admin-panel-body">
-      <div class="form-row">
-        <div class="form-group"><label for="ap-name">Project name</label><input class="form-control" id="ap-name" placeholder="e.g. Portfolio Website"></div>
-        <div class="form-group"><label for="ap-category">Category</label>
-          <select class="form-control" id="ap-category">${cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}<option value="__new__">+ New category…</option></select>
-        </div>
-      </div>
-      <div class="form-group" id="ap-new-cat-wrap" style="display:none;"><label for="ap-new-cat">New category name</label><input class="form-control" id="ap-new-cat" placeholder="e.g. WordPress Themes"></div>
-      <div class="form-group"><label for="ap-short">Short description</label><input class="form-control" id="ap-short" placeholder="One line shown on the project card"></div>
-      <div class="form-group"><label for="ap-full">Full description</label><textarea class="form-control" id="ap-full" placeholder="Longer description shown on the project page"></textarea></div>
-      <div class="form-row">
-        <div class="form-group"><label for="ap-tech">Technology</label><input class="form-control" id="ap-tech" placeholder="e.g. React, Node.js"></div>
-        <div class="form-group"><label for="ap-version">Version</label><input class="form-control" id="ap-version" value="1.0.0"></div>
-      </div>
-      <div class="form-group"><label for="ap-requirements">Requirements</label><input class="form-control" id="ap-requirements" placeholder="e.g. PHP 8+, MySQL"></div>
-      <div class="toggle-row"><div><b>This is a mobile/desktop app</b><div style="font-size:.78rem;color:var(--text-muted);">Shows an Install-style button instead of a plain Download button</div></div><button type="button" class="switch" id="ap-is-app"><span class="knob"></span></button></div>
-      <div class="toggle-row"><div><b>Free project</b><div style="font-size:.78rem;color:var(--text-muted);">Off = premium (shows a Contact to Buy button instead of Download)</div></div><button type="button" class="switch on" id="ap-is-free"><span class="knob"></span></button></div>
-      <div class="form-group hidden" id="ap-price-wrap"><label for="ap-price">Price (PKR)</label><input class="form-control" id="ap-price" type="number" min="0" placeholder="e.g. 2500"></div>
-
-      <div class="form-group">
-        <label>Project file (.zip, .rar or .apk)</label>
-        <div class="dropzone" id="ap-dropzone">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
-          <div id="ap-file-label">Click to choose a file, or drag it here</div>
-        </div>
-        <input type="file" id="ap-file-input" class="hidden" accept=".zip,.rar,.apk,.7z">
-        <div class="upload-progress-track hidden" id="ap-progress-track"><div class="upload-progress-fill" id="ap-progress-fill"></div></div>
-        <div id="ap-progress-text" style="font-size:.78rem;color:var(--text-muted);margin-top:6px;"></div>
-      </div>
-
-      <div class="form-group">
-        <label>Screenshots (optional — any number, shown as a sliding gallery)</label>
-        <div class="dropzone" id="ap-shots-dropzone">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 8h.01M4 4h16v16H4z"/></svg>
-          <div id="ap-shots-label">Click to choose images, or drag them here</div>
-        </div>
-        <input type="file" id="ap-shots-input" class="hidden" accept="image/*" multiple>
-        <div id="ap-shots-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
-      </div>
-
-      <div class="form-group">
-        <label>Cover image (shown on the card — like a thumbnail/poster, or app icon for apps)</label>
-        <div class="dropzone" id="ap-cover-dropzone">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 8h.01M4 4h16v16H4z"/></svg>
-          <div id="ap-cover-label">Click to choose an image, or drag it here</div>
-        </div>
-        <input type="file" id="ap-cover-input" class="hidden" accept="image/*">
-        <img id="ap-cover-preview" class="hidden" style="margin-top:10px;max-height:120px;border-radius:10px;border:1px solid var(--border);" alt="">
-        <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px;">Not set? The first screenshot above is used instead, or a plain color if there are none.</p>
-      </div>
-
-      <button class="btn btn-secondary" id="ap-connect-drive" type="button" style="margin-bottom:14px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-        ${DriveAPI.isConnected() ? 'Google Drive connected ✓' : 'Connect Google Drive'}
-      </button>
-      <div>
-        <button class="btn btn-primary" id="ap-submit" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg> Upload & publish</button>
-      </div>
-    </div></div>`;
-  refreshIcons();
-
-  const catSelect = qs('#ap-category');
-  catSelect.onchange = ()=> qs('#ap-new-cat-wrap').style.display = catSelect.value==='__new__' ? 'flex' : 'none';
-
-  const isAppSwitch = qs('#ap-is-app'); isAppSwitch.onclick = ()=> isAppSwitch.classList.toggle('on');
-  const isFreeSwitch = qs('#ap-is-free'); isFreeSwitch.onclick = ()=>{ isFreeSwitch.classList.toggle('on'); qs('#ap-price-wrap').classList.toggle('hidden', isFreeSwitch.classList.contains('on')); };
-
-  let selectedFile = null;
-  const dz = qs('#ap-dropzone'); const fileInput = qs('#ap-file-input');
-  dz.onclick = ()=> fileInput.click();
-  fileInput.onchange = ()=>{ if(fileInput.files[0]){ selectedFile = fileInput.files[0]; qs('#ap-file-label').textContent = selectedFile.name+' ('+(selectedFile.size/1048576).toFixed(1)+' MB)'; } };
-  ['dragover','dragleave','drop'].forEach(evt=> dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.toggle('drag', evt==='dragover'); }));
-  dz.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]){ selectedFile = e.dataTransfer.files[0]; fileInput.files = e.dataTransfer.files; qs('#ap-file-label').textContent = selectedFile.name+' ('+(selectedFile.size/1048576).toFixed(1)+' MB)'; } });
-
-  let selectedScreenshots = [];
-  const shotsDz = qs('#ap-shots-dropzone'); const shotsInput = qs('#ap-shots-input');
-  function renderShotsPreview(){
-    qs('#ap-shots-preview').innerHTML = selectedScreenshots.map((f,i)=>`<div style="position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;"><img src="${URL.createObjectURL(f)}" style="width:100%;height:100%;object-fit:cover;display:block;"><button type="button" data-rm-shot="${i}" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border:none;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:12px;line-height:1;cursor:pointer;">×</button></div>`).join('');
-    qsa('[data-rm-shot]', qs('#ap-shots-preview')).forEach(b=> b.onclick = ()=>{ selectedScreenshots.splice(Number(b.dataset.rmShot),1); renderShotsPreview(); });
-    qs('#ap-shots-label').textContent = selectedScreenshots.length ? selectedScreenshots.length+' image'+(selectedScreenshots.length===1?'':'s')+' selected — click to add more' : 'Click to choose images, or drag them here';
-  }
-  shotsDz.onclick = ()=> shotsInput.click();
-  shotsInput.onchange = ()=>{ selectedScreenshots.push(...Array.from(shotsInput.files)); shotsInput.value=''; renderShotsPreview(); };
-  ['dragover','dragleave','drop'].forEach(evt=> shotsDz.addEventListener(evt, e=>{
-    e.preventDefault(); shotsDz.classList.toggle('drag', evt==='dragover');
-    if(evt==='drop'){ selectedScreenshots.push(...Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/'))); renderShotsPreview(); }
-  }));
-
-  let selectedCover = null;
-  const coverDz = qs('#ap-cover-dropzone'), coverInput = qs('#ap-cover-input'), coverPreview = qs('#ap-cover-preview');
-  function setCover(f){
-    if(!f || !f.type.startsWith('image/')){ toast('Please choose an image file.', 'error'); return; }
-    selectedCover = f; qs('#ap-cover-label').textContent = f.name+' ('+(f.size/1048576).toFixed(1)+' MB) — click to change';
-    coverPreview.src = URL.createObjectURL(f); coverPreview.classList.remove('hidden');
-  }
-  coverDz.onclick = ()=> coverInput.click();
-  coverInput.onchange = ()=>{ if(coverInput.files[0]) setCover(coverInput.files[0]); };
-  ['dragover','dragleave','drop'].forEach(evt=> coverDz.addEventListener(evt, e=>{ e.preventDefault(); coverDz.classList.toggle('drag', evt==='dragover'); if(evt==='drop' && e.dataTransfer.files[0]) setCover(e.dataTransfer.files[0]); }));
-
-  qs('#ap-connect-drive').onclick = async (e)=>{
-    const btn = e.currentTarget; btn.disabled=true; btn.innerHTML='<span class="spinner dark-sp"></span> Connecting…';
-    try{ await DriveAPI.connect(); toast('Google Drive connected.', 'success'); btn.innerHTML='Google Drive connected ✓'; }
-    catch(err){ toast(err.message, 'error'); btn.innerHTML='Connect Google Drive'; }
-    btn.disabled=false;
-  };
-
-  qs('#ap-submit').onclick = async ()=>{
-    const name = qs('#ap-name').value.trim();
-    let category = catSelect.value;
-    const newCat = qs('#ap-new-cat').value.trim();
-    if(category==='__new__'){ if(!newCat){ toast('Enter a name for the new category.', 'error'); return; } category = newCat; }
-    if(!name){ toast('Enter a project name.', 'error'); return; }
-    if(!selectedFile){ toast('Choose a file to upload.', 'error'); return; }
-
-    const isApp = isAppSwitch.classList.contains('on');
-    const isFree = isFreeSwitch.classList.contains('on');
-    const price = isFree ? 0 : Number(qs('#ap-price').value||0);
-
-    const submitBtn = qs('#ap-submit'); submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner"></span> Working…';
-    const progressTrack = qs('#ap-progress-track'); const progressFill = qs('#ap-progress-fill'); const progressText = qs('#ap-progress-text');
-    progressTrack.classList.remove('hidden');
-
-    try{
-      if(!DataStore.getCategories().includes(category)){
-        const cats2 = DataStore.getCategories(); cats2.push(category); DataStore.saveCategories(cats2);
-      }
-      progressText.textContent = 'Connecting to Google Drive…';
-      await DriveAPI.ensureToken();
-      progressText.textContent = 'Preparing category folder…';
-      const folderId = await DriveAPI.ensureCategoryFolder(category);
-      progressText.textContent = 'Uploading file…';
-      const uploaded = await DriveAPI.uploadFile(selectedFile, folderId, (pct)=>{ progressFill.style.width = pct+'%'; progressText.textContent = 'Uploading… '+pct+'%'; });
-      progressText.textContent = 'Finalizing download link…';
-      const downloadUrl = await DriveAPI.makePublic(uploaded.id);
-
-      const screenshots = [];
-      if(selectedScreenshots.length){
-        const shotsFolderId = await DriveAPI.ensureCategoryFolder('Screenshots');
-        for(let i=0;i<selectedScreenshots.length;i++){
-          const f = selectedScreenshots[i];
-          progressText.textContent = `Uploading screenshot ${i+1}/${selectedScreenshots.length}…`;
-          const up = await DriveAPI.uploadFile(f, shotsFolderId, (pct)=>{ progressFill.style.width = pct+'%'; });
-          await DriveAPI.makePublic(up.id);
-          screenshots.push({ id: up.id, url: driveImageUrl(up.id) });
-        }
-      }
-
-      let coverImage = null;
-      if(selectedCover){
-        progressText.textContent = 'Uploading cover image…';
-        const coverFolderId = await DriveAPI.ensureCategoryFolder('Screenshots');
-        const upCover = await DriveAPI.uploadFile(selectedCover, coverFolderId, (pct)=>{ progressFill.style.width = pct+'%'; });
-        await DriveAPI.makePublic(upCover.id);
-        coverImage = { id: upCover.id, url: driveImageUrl(upCover.id) };
-      }
-
-      const project = {
-        id: uid(), slug: slugify(name)+'-'+Date.now().toString(36).slice(-4), name, category,
-        shortDesc: qs('#ap-short').value.trim(), fullDesc: qs('#ap-full').value.trim(),
-        technology: qs('#ap-tech').value.trim(), version: qs('#ap-version').value.trim()||'1.0.0',
-        requirements: qs('#ap-requirements').value.trim(), features:[],
-        isFree, price, type: isApp?'app':'website',
-        fileSize: (selectedFile.size/1048576).toFixed(1)+' MB',
-        driveFileId: uploaded.id, downloadUrl, screenshots, coverImage,
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), downloadCount:0
-      };
-      DataStore.saveProject(project);
-      toast('Project uploaded and published.', 'success');
-      location.hash = '#/admin/projects';
-    }catch(err){
-      toast(err.message || 'Upload failed.', 'error');
-      submitBtn.disabled=false; submitBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg> Upload & publish';
-    }
-  };
-}
-
-function renderAdminCategories(content){
-  const cats = DataStore.getCategories(); const projects = DataStore.getProjects();
-  content.innerHTML = `
-    <div class="admin-topline"><h2>Categories</h2></div>
-    <div class="admin-panel"><div class="admin-panel-body">
-      <div class="form-row" style="align-items:flex-end;">
-        <div class="form-group" style="margin-bottom:0;"><label for="new-cat-input">New category name</label><input class="form-control" id="new-cat-input" placeholder="e.g. WordPress Themes"></div>
-        <button class="btn btn-primary" id="add-cat-btn" style="height:44px;">Add</button>
-      </div>
-    </div></div>
-    <div class="admin-panel"><div class="admin-panel-body">
-      ${cats.map(c=>{ const count = projects.filter(p=>p.category===c).length; return `<div class="amc-row" style="border-bottom:1px solid var(--border);padding:12px 0;">
-        <span style="display:flex;align-items:center;gap:8px;"><svg data-lucide="${categoryIcon(c)}" style="width:16px;height:16px;"></svg> ${escapeHtml(c)} <span style="color:var(--text-muted);font-size:.78rem;">(${count})</span></span>
-        <button class="btn btn-danger btn-sm" data-del-cat="${escapeHtml(c)}" ${count>0?'disabled title="Move or delete its projects first"':''}>Delete</button></div>`; }).join('')}
-    </div></div>`;
-  refreshIcons();
-  qs('#add-cat-btn').onclick = ()=>{
-    const val = qs('#new-cat-input').value.trim();
-    if(!val){ toast('Enter a category name.', 'error'); return; }
-    const cats2 = DataStore.getCategories();
-    if(cats2.includes(val)){ toast('That category already exists.', 'error'); return; }
-    cats2.push(val); DataStore.saveCategories(cats2);
-    toast('Category added.', 'success'); renderAdminTab('categories');
-  };
-  qsa('[data-del-cat]', content).forEach(b=> b.onclick = ()=>{
-    confirmDialog(`Delete category "${b.dataset.delCat}"?`, ()=>{
-      DataStore.saveCategories(DataStore.getCategories().filter(c=>c!==b.dataset.delCat));
-      toast('Category deleted.', 'success'); renderAdminTab('categories');
-    }, 'Delete');
-  });
-}
-
-let liveSiteEditingId = null;
-function renderAdminLiveSites(content){
-  const sites = DataStore.getLiveSites();
-  content.innerHTML = `
-    <div class="admin-topline"><h2>Live Websites</h2><p style="color:var(--text-muted);font-size:.85rem;">These show up on your homepage and on the public "Live Sites" page for every visitor.</p></div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3 id="ls-form-title">Add a live website</h3></div>
-      <div class="admin-panel-body">
-        <input type="hidden" id="ls-id">
-        <div class="form-row">
-          <div class="form-group"><label for="ls-name">Website name</label><input class="form-control" id="ls-name" placeholder="e.g. My Portfolio"></div>
-          <div class="form-group"><label for="ls-url">Website URL</label><input class="form-control" id="ls-url" placeholder="https://example.com"></div>
-        </div>
-        <div class="form-group"><label for="ls-desc">Description (shown in full on the detail page; keep the first line short — it's what shows on the card)</label><textarea class="form-control" id="ls-desc" placeholder="One short line about this website, then more detail below if you like"></textarea></div>
-        <div class="form-group">
-          <label>Preview image (what visitors see before clicking — a screenshot of the site works great)</label>
-          <div class="dropzone" id="ls-cover-dropzone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 8h.01M4 4h16v16H4z"/></svg><div id="ls-cover-label">Click to choose an image, or drag it here</div></div>
-          <input type="file" id="ls-cover-input" class="hidden" accept="image/*">
-          <img id="ls-cover-preview" class="hidden" style="margin-top:10px;max-height:120px;border-radius:10px;border:1px solid var(--border);" alt="">
-        </div>
-        <div id="ls-progress" style="font-size:.8rem;color:var(--text-muted);margin-bottom:10px;"></div>
-        <div style="display:flex;gap:10px;">
-          <button class="btn btn-primary" id="ls-save-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Add website</button>
-          <button class="btn btn-secondary hidden" id="ls-cancel-btn" type="button">Cancel edit</button>
-        </div>
-      </div>
-    </div>
-    <div class="admin-panel"><div class="admin-panel-body">
-      ${sites.length ? `<div class="responsive-table"><table class="admin-table"><thead><tr><th>Name</th><th>URL</th><th></th></tr></thead><tbody>
-        ${sites.map(s=>`<tr><td>${escapeHtml(s.name)}</td><td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" style="color:var(--accent);">${escapeHtml(s.url.replace(/^https?:\/\//,''))}</a></td>
-        <td class="row-actions"><button class="btn btn-secondary btn-sm" data-edit-ls="${s.id}">Edit</button><button class="btn btn-danger btn-sm" data-del-ls="${s.id}">Delete</button></td></tr>`).join('')}
-      </tbody></table></div>
-      <div class="admin-cards-mobile">${sites.map(s=>`<div class="admin-mobile-card"><b>${escapeHtml(s.name)}</b><div class="amc-row"><span style="word-break:break-all;">${escapeHtml(s.url)}</span></div><div class="row-actions" style="margin-top:8px;"><button class="btn btn-secondary btn-sm" data-edit-ls="${s.id}">Edit</button><button class="btn btn-danger btn-sm" data-del-ls="${s.id}">Delete</button></div></div>`).join('')}</div>`
-      : emptyStateHtml('No live websites yet', 'Add your first one using the form above.')}
-    </div></div>`;
-  refreshIcons();
-  liveSiteEditingId = null;
-  let lsSelectedCover = null;
-  const lsCoverDz = qs('#ls-cover-dropzone'), lsCoverInput = qs('#ls-cover-input'), lsCoverPreview = qs('#ls-cover-preview');
-  function setLsCover(f){
-    if(!f || !f.type.startsWith('image/')){ toast('Please choose an image file.', 'error'); return; }
-    lsSelectedCover = f; qs('#ls-cover-label').textContent = f.name+' ('+(f.size/1048576).toFixed(1)+' MB) — click to change';
-    lsCoverPreview.src = URL.createObjectURL(f); lsCoverPreview.classList.remove('hidden');
-  }
-  lsCoverDz.onclick = ()=> lsCoverInput.click();
-  lsCoverInput.onchange = ()=>{ if(lsCoverInput.files[0]) setLsCover(lsCoverInput.files[0]); };
-  ['dragover','dragleave','drop'].forEach(evt=> lsCoverDz.addEventListener(evt, e=>{ e.preventDefault(); lsCoverDz.classList.toggle('drag', evt==='dragover'); if(evt==='drop' && e.dataTransfer.files[0]) setLsCover(e.dataTransfer.files[0]); }));
-
-  function resetForm(){
-    liveSiteEditingId = null; lsSelectedCover = null; lsCoverInput.value='';
-    qs('#ls-id').value=''; qs('#ls-name').value=''; qs('#ls-url').value=''; qs('#ls-desc').value='';
-    qs('#ls-cover-label').textContent = 'Click to choose an image, or drag it here';
-    lsCoverPreview.classList.add('hidden'); lsCoverPreview.removeAttribute('src');
-    qs('#ls-form-title').textContent='Add a live website';
-    qs('#ls-save-btn').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m-7-7h14"/></svg> Add website';
-    qs('#ls-cancel-btn').classList.add('hidden');
-    refreshIcons();
-  }
-
-  qs('#ls-save-btn').onclick = async ()=>{
-    const name = qs('#ls-name').value.trim();
-    let url = qs('#ls-url').value.trim();
-    const description = qs('#ls-desc').value.trim();
-    if(!name){ toast('Enter a website name.', 'error'); return; }
-    if(!url){ toast('Enter a website URL.', 'error'); return; }
-    if(!/^https?:\/\//i.test(url)) url = 'https://'+url;
-    try{ new URL(url); }catch(e){ toast('That URL doesn\'t look valid.', 'error'); return; }
-
-    const existing = liveSiteEditingId ? sites.find(x=>x.id===liveSiteEditingId) : null;
-    const btn = qs('#ls-save-btn'); const label = btn.innerHTML; btn.disabled = true;
-    const status = qs('#ls-progress');
-    try{
-      let coverImage = existing ? existing.coverImage || null : null;
-      if(lsSelectedCover){
-        status.textContent = 'Connecting to Google Drive…';
-        const folderId = await DriveAPI.ensureCategoryFolder('Screenshots');
-        status.textContent = 'Uploading image…';
-        const up = await DriveAPI.uploadFile(lsSelectedCover, folderId, (pct)=>{ status.textContent = 'Uploading image… '+pct+'%'; });
-        await DriveAPI.makePublic(up.id);
-        coverImage = { id: up.id, url: driveImageUrl(up.id) };
-      }
-      const site = { id: liveSiteEditingId || uid(), name, url, description, coverImage, createdAt: existing ? existing.createdAt || new Date().toISOString() : new Date().toISOString() };
-      DataStore.saveLiveSite(site);
-      toast(liveSiteEditingId ? 'Website updated.' : 'Website added.', 'success');
-      renderAdminTab('live-sites');
-    }catch(err){
-      toast('Could not save: '+(err.message||err), 'error');
-      status.textContent = ''; btn.disabled = false; btn.innerHTML = label;
-    }
-  };
-  qs('#ls-cancel-btn').onclick = resetForm;
-  qsa('[data-edit-ls]', content).forEach(b=> b.onclick = ()=>{
-    const s = sites.find(x=>x.id===b.dataset.editLs); if(!s) return;
-    liveSiteEditingId = s.id; lsSelectedCover = null;
-    qs('#ls-id').value = s.id; qs('#ls-name').value = s.name; qs('#ls-url').value = s.url; qs('#ls-desc').value = s.description||'';
-    if(s.coverImage){ lsCoverPreview.src = s.coverImage.url; lsCoverPreview.classList.remove('hidden'); qs('#ls-cover-label').textContent = 'Current image kept — click to replace it'; }
-    qs('#ls-form-title').textContent = 'Edit live website';
-    qs('#ls-save-btn').innerHTML = 'Save changes';
-    qs('#ls-cancel-btn').classList.remove('hidden');
-    qs('#ls-name').scrollIntoView({behavior:'smooth', block:'center'});
-  });
-  qsa('[data-del-ls]', content).forEach(b=> b.onclick = ()=>{
-    const s = sites.find(x=>x.id===b.dataset.delLs);
-    confirmDialog(`Remove "${s.name}" from your live websites?`, ()=>{
-      DataStore.deleteLiveSite(s.id); toast('Removed.', 'success'); renderAdminTab('live-sites');
-    }, 'Remove');
-  });
-}
-
-let bannerEditingId = null;
-function renderAdminSlider(content){
-  const banners = DataStore.getBanners();
-  content.innerHTML = `
-    <div class="admin-topline"><h2>Homepage Slider</h2><p style="color:var(--text-muted);font-size:.85rem;">Big banner slides shown at the top of your homepage — use them to show visitors what you can build for them. Images are saved to your Google Drive.</p></div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3 id="bn-form-title">Add a slide</h3></div>
-      <div class="admin-panel-body">
-        <div class="form-group">
-          <label>Slide image (wide images look best, e.g. 1600×600)</label>
-          <div class="dropzone" id="bn-dropzone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 8h.01M4 4h16v16H4z"/></svg><div id="bn-file-label">Click to choose an image, or drag it here</div></div>
-          <input type="file" id="bn-file-input" class="hidden" accept="image/*">
-          <img id="bn-preview" class="hidden" style="margin-top:10px;max-height:140px;border-radius:10px;border:1px solid var(--border);" alt="">
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label for="bn-title">Headline</label><input class="form-control" id="bn-title" placeholder="e.g. Get your own website or app built"></div>
-          <div class="form-group"><label for="bn-sub">Sub-text</label><input class="form-control" id="bn-sub" placeholder="e.g. Custom websites & apps, delivered fast"></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label for="bn-btn-text">Button text (optional)</label><input class="form-control" id="bn-btn-text" placeholder="e.g. Contact me"></div>
-          <div class="form-group"><label for="bn-btn-link">Button link (optional)</label><input class="form-control" id="bn-btn-link" placeholder="#/contact or https://..."></div>
-        </div>
-        <div id="bn-progress" style="font-size:.8rem;color:var(--text-muted);margin-bottom:10px;"></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn btn-primary" id="bn-save-btn" type="button">Add slide</button>
-          <button class="btn btn-secondary hidden" id="bn-cancel-btn" type="button">Cancel edit</button>
-        </div>
-      </div>
-    </div>
-    <div class="admin-panel"><div class="admin-panel-body">
-      ${banners.length ? banners.map((b,i)=>`
-        <div style="display:flex;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-          <img src="${b.imageUrl}" alt="" style="width:120px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
-          <div style="flex:1;min-width:150px;"><b>${escapeHtml(b.title||'(no headline)')}</b><div style="font-size:.8rem;color:var(--text-muted);">${escapeHtml(b.subtitle||'')}</div></div>
-          <div class="row-actions">
-            <button class="btn btn-secondary btn-sm" data-bn-up="${b.id}" ${i===0?'disabled':''}>↑</button>
-            <button class="btn btn-secondary btn-sm" data-bn-down="${b.id}" ${i===banners.length-1?'disabled':''}>↓</button>
-            <button class="btn btn-secondary btn-sm" data-bn-edit="${b.id}">Edit</button>
-            <button class="btn btn-danger btn-sm" data-bn-del="${b.id}">Delete</button>
-          </div>
-        </div>`).join('') : emptyStateHtml('No slides yet', 'Add your first slide using the form above.')}
-    </div></div>`;
-  refreshIcons();
-  bannerEditingId = null;
-  let chosen = null;
-  const dz = qs('#bn-dropzone'), input = qs('#bn-file-input'), prev = qs('#bn-preview');
-  function setFile(f){
-    if(!f || !f.type.startsWith('image/')){ toast('Please choose an image file.', 'error'); return; }
-    chosen = f; qs('#bn-file-label').textContent = f.name+' ('+(f.size/1048576).toFixed(1)+' MB)';
-    prev.src = URL.createObjectURL(f); prev.classList.remove('hidden');
-  }
-  dz.onclick = ()=> input.click();
-  input.onchange = ()=>{ if(input.files[0]) setFile(input.files[0]); };
-  ['dragover','dragleave','drop'].forEach(evt=> dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.toggle('drag', evt==='dragover'); if(evt==='drop' && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); }));
-
-  function resetForm(){
-    bannerEditingId = null; chosen = null; input.value='';
-    ['#bn-title','#bn-sub','#bn-btn-text','#bn-btn-link'].forEach(id=> qs(id).value='');
-    qs('#bn-file-label').textContent = 'Click to choose an image, or drag it here';
-    prev.classList.add('hidden'); prev.removeAttribute('src');
-    qs('#bn-form-title').textContent = 'Add a slide'; qs('#bn-save-btn').textContent = 'Add slide'; qs('#bn-cancel-btn').classList.add('hidden');
-  }
-  qs('#bn-cancel-btn').onclick = resetForm;
-
-  qs('#bn-save-btn').onclick = async ()=>{
-    const existing = bannerEditingId ? banners.find(b=>b.id===bannerEditingId) : null;
-    if(!existing && !chosen){ toast('Choose an image for the slide.', 'error'); return; }
-    const btn = qs('#bn-save-btn'); const label = btn.textContent; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Working…';
-    const status = qs('#bn-progress');
-    try{
-      let imageId = existing ? existing.imageId : '', imageUrl = existing ? existing.imageUrl : '';
-      if(chosen){
-        status.textContent = 'Connecting to Google Drive…';
-        await DriveAPI.ensureToken();
-        const folderId = await DriveAPI.ensureCategoryFolder('Slider');
-        status.textContent = 'Uploading image…';
-        const up = await DriveAPI.uploadFile(chosen, folderId, (pct)=>{ status.textContent = 'Uploading image… '+pct+'%'; });
-        await DriveAPI.makePublic(up.id);
-        imageId = up.id; imageUrl = `https://drive.google.com/thumbnail?id=${up.id}&sz=w1600`;
-      }
-      const banner = { id: existing ? existing.id : uid(), imageId, imageUrl,
-        title: qs('#bn-title').value.trim(), subtitle: qs('#bn-sub').value.trim(),
-        buttonText: qs('#bn-btn-text').value.trim(), buttonLink: qs('#bn-btn-link').value.trim() };
-      const list = DataStore.getBanners();
-      const idx = list.findIndex(b=>b.id===banner.id);
-      if(idx>-1) list[idx] = banner; else list.push(banner);
-      DataStore.saveBanners(list);
-      toast(existing ? 'Slide updated.' : 'Slide added.', 'success');
-      renderAdminTab('slider');
-    }catch(err){
-      toast('Could not save slide: '+(err.message||err), 'error');
-      status.textContent = ''; btn.disabled = false; btn.textContent = label;
-    }
-  };
-  function move(id, dir){
-    const list = DataStore.getBanners(); const i = list.findIndex(b=>b.id===id); const j = i+dir;
-    if(i<0 || j<0 || j>=list.length) return;
-    [list[i], list[j]] = [list[j], list[i]]; DataStore.saveBanners(list); renderAdminTab('slider');
-  }
-  qsa('[data-bn-up]', content).forEach(b=> b.onclick = ()=> move(b.dataset.bnUp, -1));
-  qsa('[data-bn-down]', content).forEach(b=> b.onclick = ()=> move(b.dataset.bnDown, 1));
-  qsa('[data-bn-edit]', content).forEach(b=> b.onclick = ()=>{
-    const bn = banners.find(x=>x.id===b.dataset.bnEdit); if(!bn) return;
-    bannerEditingId = bn.id; chosen = null;
-    qs('#bn-title').value = bn.title||''; qs('#bn-sub').value = bn.subtitle||'';
-    qs('#bn-btn-text').value = bn.buttonText||''; qs('#bn-btn-link').value = bn.buttonLink||'';
-    prev.src = bn.imageUrl; prev.classList.remove('hidden');
-    qs('#bn-file-label').textContent = 'Current image kept — click to replace it';
-    qs('#bn-form-title').textContent = 'Edit slide'; qs('#bn-save-btn').textContent = 'Save changes'; qs('#bn-cancel-btn').classList.remove('hidden');
-    qs('#bn-title').scrollIntoView({behavior:'smooth', block:'center'});
-  });
-  qsa('[data-bn-del]', content).forEach(b=> b.onclick = ()=>{
-    const bn = banners.find(x=>x.id===b.dataset.bnDel);
-    confirmDialog('Delete this slide from your homepage?', ()=>{ DataStore.saveBanners(DataStore.getBanners().filter(x=>x.id!==bn.id)); toast('Slide deleted.', 'success'); renderAdminTab('slider'); }, 'Delete');
-  });
-}
-
-function renderAdminDownloads(content){
-  const sorted = [...DataStore.getProjects()].sort((a,b)=>(b.downloadCount||0)-(a.downloadCount||0));
-  content.innerHTML = `<div class="admin-topline"><h2>Downloads</h2></div>
-    <div class="admin-panel"><div class="admin-panel-body">
-      ${sorted.length ? `<div class="responsive-table"><table class="admin-table"><thead><tr><th>Project</th><th>Type</th><th>Downloads</th></tr></thead><tbody>
-        ${sorted.map(p=>`<tr><td>${escapeHtml(p.name)}</td><td>${p.isFree?'Free':'Paid'}</td><td><b>${(p.downloadCount||0).toLocaleString()}</b></td></tr>`).join('')}
-      </tbody></table></div>` : emptyStateHtml('No data yet', 'Download counts will show up here once projects are live.')}
-    </div></div>`;
-}
-
-function renderAdminSettings(content){
-  const settings = DataStore.getSettings();
-  content.innerHTML = `
-    <div class="admin-topline"><h2>Settings</h2></div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3>Site details</h3></div>
-      <div class="admin-panel-body">
-        <div class="settings-grid">
-          <div class="form-group"><label for="s-name">Website name</label><input class="form-control" id="s-name" value="${escapeHtml(settings.siteName)}"></div>
-          <div class="form-group"><label for="s-email">Contact email</label><input class="form-control" id="s-email" value="${escapeHtml(settings.contactEmail)}"></div>
-          <div class="form-group"><label for="s-youtube">YouTube channel URL</label><input class="form-control" id="s-youtube" value="${escapeHtml(settings.youtubeUrl)}"></div>
-        </div>
-        <button class="btn btn-primary" id="save-basic-settings">Save</button>
-      </div>
-    </div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3>Google Drive connection</h3></div>
-      <div class="admin-panel-body">
-        <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px;">Uploaded files are saved into a folder called <b>Mr JB World Uploads</b> in your own Google Drive, with one sub-folder per category. The app can only see files it creates itself — never your other Drive files.</p>
-        <div class="form-group"><label for="s-client-id">Google OAuth Client ID</label><input class="form-control" id="s-client-id" value="${escapeHtml(settings.driveClientId)}"></div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span class="provider-chip"><span class="dot ${DriveAPI.isConnected()?'active':'inactive'}"></span>${DriveAPI.isConnected()?'Connected for this session':'Not connected yet'}</span>
-          <button class="btn btn-secondary btn-sm" id="s-connect-drive">Connect Google Drive</button>
-        </div>
-        <div class="info-banner" style="margin-top:16px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01M12 2 2 20h20Z"/></svg> The connection is per-browser-session — you'll reconnect once each time you come back to upload (this keeps your Drive access from being stored permanently anywhere).</div>
-        <button class="btn btn-primary" id="save-drive-settings" style="margin-top:14px;">Save Client ID</button>
-      </div>
-    </div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3>Cloud Database (makes uploads visible to every visitor)</h3></div>
-      <div class="admin-panel-body">
-        <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px;">By default a browser's data stays on that one device. Once you connect Drive and save/upload anything, a shared <code>mjbw_database.json</code> file is created in your Drive and its ID appears below.</p>
-        ${CLOUD_DB_FILE_ID
-          ? `<div class="info-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Cloud database is live and hardcoded — every visitor sees the same data.</div>`
-          : `<div class="form-group"><label>Current File ID${CloudSync.getFileId()?'':' (not created yet — save a project or category first)'}</label>
-             <div style="display:flex;gap:8px;"><input class="form-control" id="s-cloud-id" value="${escapeHtml(CloudSync.getFileId())}" readonly><button class="btn btn-secondary btn-sm" id="s-copy-cloud-id">Copy</button></div></div>
-             <div class="info-banner" style="margin-top:10px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01"/></svg> ${CloudSync.getFileId() ? 'One-time step: copy this ID into the <code>CLOUD_DB_FILE_ID</code> constant near the top of script.js, then re-upload script.js to your hosting. After that, every visitor on every device will see your live projects and can download them — no login needed.' : 'This box fills in automatically the first time you add/edit a project, category, or live site while Drive is connected above.'}</div>`}
-        <button class="btn btn-secondary" id="s-sync-cloud" style="margin-top:14px;">Sync everything to cloud now</button>
-        <p style="font-size:.78rem;color:var(--text-muted);margin-top:8px;">Use this once after connecting Drive so projects you uploaded earlier also become visible to every visitor.</p>
-      </div>
-    </div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3>Admin access</h3></div>
-      <div class="admin-panel-body">
-        <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px;">The "Admin" area has no visible link on the site. Reach it by opening <code>#/admin-login</code> directly, or by clicking the copyright text in the footer 5 times quickly. There is no public sign-up — only this one account can ever log in.</p>
-        <div class="form-row">
-          <div class="form-group"><label for="s-new-username">Username</label><input class="form-control" id="s-new-username" value="${escapeHtml(JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'{}').username||'')}"></div>
-          <div class="form-group"><label for="s-current-pass">Current password</label><input class="form-control" id="s-current-pass" type="password" autocomplete="current-password"></div>
-        </div>
-        <div class="form-group"><label for="s-new-pass">New password (leave blank to keep current)</label><input class="form-control" id="s-new-pass" type="password" autocomplete="new-password"></div>
-        <button class="btn btn-primary" id="s-change-pass-btn">Update admin login</button>
-      </div>
-    </div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3>Google account lock (2nd factor)</h3></div>
-      <div class="admin-panel-body">
-        <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px;">After the username/password step, the dashboard only unlocks if you also sign in with this exact Google account. Anyone without access to this Gmail inbox is blocked even if they somehow knew the password.</p>
-        <div class="form-group"><label for="s-admin-email">Authorized Gmail address</label><input class="form-control" id="s-admin-email" value="${escapeHtml(settings.allowedAdminEmail||'')}"></div>
-        <button class="btn btn-primary" id="save-admin-email-btn">Save authorized Gmail</button>
-      </div>
-    </div>
-    <div class="admin-panel"><div class="admin-panel-header"><h3>Troubleshooting Google Drive "access_denied"</h3></div>
-      <div class="admin-panel-body">
-        <p style="font-size:.85rem;color:var(--text-muted);line-height:1.6;">This Google Cloud project is still in <b>Testing</b> mode, so Google only allows Google accounts that are explicitly added as test users to connect — that's expected, not a bug. One-time fix in Google Cloud Console:</p>
-        <ol style="font-size:.85rem;color:var(--text-muted);line-height:1.9;padding-left:18px;margin-top:8px;">
-          <li>Open <b>APIs & Services → OAuth consent screen</b>.</li>
-          <li>Scroll to <b>Test users</b> → Add users → enter your own Google account email.</li>
-          <li>Save, then try "Connect Google Drive" again with that same Google account.</li>
-        </ol>
-        <p style="font-size:.85rem;color:var(--text-muted);margin-top:10px;">(Publishing the app to "Production" later removes this limit, but requires Google's verification review — not needed for personal use.)</p>
-      </div>
-    </div>`;
-  refreshIcons();
-  qs('#save-admin-email-btn').onclick = ()=>{
-    const s = DataStore.getSettings();
-    const val = qs('#s-admin-email').value.trim();
-    if(!val || !/^\S+@\S+\.\S+$/.test(val)){ toast('Enter a valid Gmail address.', 'error'); return; }
-    s.allowedAdminEmail = val; DataStore.saveSettings(s);
-    toast('Authorized Gmail updated.', 'success');
-  };
-  qs('#s-change-pass-btn').onclick = async ()=>{
-    const btn = qs('#s-change-pass-btn'); const newUser = qs('#s-new-username').value.trim(); const curPass = qs('#s-current-pass').value; const newPass = qs('#s-new-pass').value;
-    if(!curPass){ toast('Enter your current password.', 'error'); return; }
-    btn.disabled = true;
-    try{
-      const creds = JSON.parse(localStorage.getItem(DB.ADMIN_CREDS)||'{}');
-      await AuthService.changePassword(curPass, newUser, newPass || curPass);
-      toast('Admin login updated.', 'success');
-      qs('#s-current-pass').value=''; qs('#s-new-pass').value='';
-    }catch(err){ toast(err.message, 'error'); }
-    btn.disabled = false;
-  };
-  qs('#save-basic-settings').onclick = ()=>{
-    const s = DataStore.getSettings();
-    s.siteName = qs('#s-name').value.trim()||s.siteName;
-    s.contactEmail = qs('#s-email').value.trim()||s.contactEmail;
-    s.youtubeUrl = qs('#s-youtube').value.trim()||s.youtubeUrl;
-    DataStore.saveSettings(s); toast('Saved.', 'success'); applyBrandingLinks();
-  };
-  qs('#save-drive-settings').onclick = ()=>{
-    const s = DataStore.getSettings();
-    s.driveClientId = qs('#s-client-id').value.trim();
-    DataStore.saveSettings(s); toast('Client ID saved.', 'success');
-  };
-  qs('#s-sync-cloud').onclick = async (e)=>{
-    const b = e.currentTarget; b.disabled = true; const t = b.textContent; b.textContent = 'Syncing…';
-    try{ await DriveAPI.ensureToken(); const id = await CloudSync.push(); toast('Synced to cloud.', 'success'); renderAdminTab('settings'); }
-    catch(err){ toast('Sync failed: '+(err.message||err), 'error'); b.disabled = false; b.textContent = t; }
-  };
-  if(qs('#s-copy-cloud-id')){
-    qs('#s-copy-cloud-id').onclick = ()=>{
-      const val = qs('#s-cloud-id').value;
-      if(!val){ toast('No File ID yet — save a project first.', 'error'); return; }
-      navigator.clipboard.writeText(val).then(()=> toast('File ID copied.', 'success')).catch(()=> toast('Could not copy — select and copy manually.', 'error'));
-    };
-  }
-  qs('#s-connect-drive').onclick = async (e)=>{
-    const btn = e.currentTarget; btn.disabled=true; btn.textContent='Connecting…';
-    try{ await DriveAPI.connect(); toast('Google Drive connected.', 'success'); renderAdminTab('settings'); }
-    catch(err){ toast(err.message, 'error'); btn.disabled=false; btn.textContent='Connect Google Drive'; }
-  };
-}
 
 /* =========================================================================
    11. ROUTER
 ========================================================================= */
-const PAGE_IDS = ['home','projects','categories','live-sites','project-detail','live-detail','about','contact','legal','admin-login','admin'];
+const PAGE_IDS = ['home','projects','categories','live-sites','project-detail','live-detail','about','contact','legal'];
 function showPage(id){
   PAGE_IDS.forEach(p=>{ const node = qs('#page-'+p); if(!node) return; node.classList.toggle('hidden', p!==id); });
   const active = qs('#page-'+id);
@@ -1531,17 +665,14 @@ function router(){
   else if(parts[0]==='about'){ showPage('about'); document.title='About — '+DataStore.getSettings().siteName; renderAboutStats(); }
   else if(parts[0]==='contact'){ showPage('contact'); document.title='Contact — '+DataStore.getSettings().siteName; initContactPage(); }
   else if(parts[0]==='legal'){ showPage('legal'); renderLegalPage(parts[1]||'privacy'); }
-  else if(parts[0]==='admin-login'){ showPage('admin-login'); document.title='Admin — '+DataStore.getSettings().siteName; renderAdminLoginPage(); }
-  else if(parts[0]==='admin'){
-    if(!AuthService.isLoggedIn()){ location.hash='#/admin-login'; return; }
-    showPage('admin'); adminState.tab = parts[1]||'overview'; renderAdminDashboard();
-  }
   else { showPage('home'); renderHome(); }
   applyBrandingLinks();
 }
 window.addEventListener('hashchange', router);
+let booted = false;
 async function boot(){
-  qs('#footer-year').textContent = new Date().getFullYear();
+  if(booted) return; booted = true;
+  const y = qs('#footer-year'); if(y) y.textContent = new Date().getFullYear();
   refreshIcons();
   await CloudSync.pull(); // fetch the shared Drive database before first render
   router();
