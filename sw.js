@@ -1,19 +1,19 @@
 // The Mr JB World — minimal service worker (app-shell caching for installability + basic offline support)
-const CACHE_NAME = 'mjbw-shell-v4';
+const CACHE_NAME = 'mjbw-shell-v5';
 const SHELL_FILES = [
   './',
   './index.html',
-  './style.css?v=10',
-  './script.js?v=10',
+  './style.css?v=11',
+  './script.js?v=11',
   './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL_FILES))
+      .then((cache) => Promise.all(SHELL_FILES.map((u) => cache.add(u).catch(() => {}))))
       .then(() => self.skipWaiting())
   );
 });
