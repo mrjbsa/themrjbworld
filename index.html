@@ -27,7 +27,7 @@
 <!-- Google Identity Services + Drive REST (used only in the hidden Admin area) -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 <a href="#main-content" class="skip-link">Skip to content</a>
@@ -122,11 +122,6 @@
 
     <div class="container section hidden" id="home-banner-section" style="padding-bottom:0;">
       <div id="home-banner-slider"></div>
-    </div>
-
-    <div class="container section hidden" id="home-preview-section" style="padding-top:0;">
-      <div class="section-head"><div><span class="eyebrow-label">See it in action</span><h2>Live project previews</h2></div></div>
-      <div id="home-preview-slider"></div>
     </div>
 
     <div class="container section">
@@ -293,7 +288,7 @@
 <div id="toast-stack" aria-live="polite"></div>
 <div id="modal-root"></div>
 
-<script src="script.js?v=7" defer></script>
+<script src="script.js?v=8" defer></script>
 <script>
   if('serviceWorker' in navigator){
     window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
