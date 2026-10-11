@@ -575,6 +575,21 @@ function faviconUrl(url){
   try{ const u = new URL(url); return `https://www.google.com/s2/favicons?sz=64&domain=${u.hostname}`; }catch(e){ return ''; }
 }
 const LIVESITE_PALETTE = [ ['#FF5C7A','#FF9A76'], ['#6C5CE7','#A78BFA'], ['#00B4D8','#48CAE4'], ['#00C875','#5EEAD4'], ['#FFB020','#FFD166'], ['#FF6FB5','#FF9ECF'] ];
+/* Hover-scroll for live-site preview images: measure how much taller the screenshot is
+   than its frame the first time the card is hovered, then let CSS animate it. */
+document.addEventListener('mouseover', (e)=>{
+  const card = e.target.closest && e.target.closest('.livesite-card-img');
+  if(!card) return;
+  const img = card.querySelector('.livesite-thumb img');
+  if(!img || img.dataset.measured || !img.clientHeight) return;
+  const dist = img.clientHeight - img.parentElement.clientHeight;
+  if(dist > 0){
+    img.style.setProperty('--scroll-y', '-'+dist+'px');
+    img.style.setProperty('--scroll-t', Math.min(9, Math.max(2.2, dist/110))+'s');
+  }
+  img.dataset.measured = '1';
+});
+
 function livesiteCardHtml(s, i){
   const fav = faviconUrl(s.url);
   const [c1,c2] = LIVESITE_PALETTE[i % LIVESITE_PALETTE.length];
