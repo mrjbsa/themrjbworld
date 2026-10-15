@@ -26,7 +26,7 @@
 <!-- Icons -->
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
 
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 <a href="#main-content" class="skip-link">Skip to content</a>
@@ -136,6 +136,11 @@
     <div class="container section" style="padding-top:0;">
       <div class="section-head"><div><span class="eyebrow-label">Fresh drops</span><h2>Latest projects</h2></div><a href="#/projects" class="btn btn-ghost btn-sm">See all →</a></div>
       <div class="project-grid" id="home-projects"></div>
+    </div>
+
+    <div class="container section hidden" style="padding-top:0;" id="home-videos-section">
+      <div class="section-head"><div><span class="eyebrow-label">Watch</span><h2>Watch on YouTube</h2></div><a href="#" id="home-videos-channel" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Visit channel →</a></div>
+      <div id="home-videos-ring"></div>
     </div>
   </section>
 
@@ -248,7 +253,7 @@
 <div id="toast-stack" aria-live="polite"></div>
 <div id="modal-root"></div>
 
-<script src="script.js?v=11" defer></script>
+<script src="script.js?v=12" defer></script>
 <script>
   if('serviceWorker' in navigator){
     window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });

@@ -1,10 +1,10 @@
 // The Mr JB World — minimal service worker (app-shell caching for installability + basic offline support)
-const CACHE_NAME = 'mjbw-shell-v5';
+const CACHE_NAME = 'mjbw-shell-v6';
 const SHELL_FILES = [
   './',
   './index.html',
-  './style.css?v=11',
-  './script.js?v=11',
+  './style.css?v=12',
+  './script.js?v=12',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'

@@ -7,11 +7,14 @@
 /* PUBLIC SITE — read-only. */
 const CLOUD_DB_FILE_ID = '12iedF9XA-M5Vr188iT9AXgkactijkcSZ'; // hardcoded — every visitor now reads this shared Drive database
 const CLOUD_API_KEY = 'AIzaSyB5xb8ydiKRv0GCu73Hfyw7hPevmoAfeNs'; // public, read-only Drive API key
+/* YouTube videos file (separate from the main database so admin saves can never wipe it).
+   Create/update it with video-manager.html, then paste its File ID here once. Empty = video features stay hidden. */
+const VIDEOS_FILE_ID = '';
 
 /* =========================================================================
    1. STORAGE KEYS & DEFAULTS
 ========================================================================= */
-const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites', BANNERS:'mjbw_banners' };
+const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites', BANNERS:'mjbw_banners', VIDEOS:'mjbw_videos' };
 
 const DEFAULT_CATEGORIES = ['Websites','Web Applications','Mobile Apps','Tools & Scripts','Other Projects'];
 
@@ -117,6 +120,49 @@ const DataStore = {
 
 
 /* =========================================================================
+   2c. YOUTUBE VIDEOS — config comes from the separate videos file (see VIDEOS_FILE_ID)
+   Shape: { channelUrl, videos:[{url,title}], projectVideos:{projectId:url}, siteVideos:{liveSiteId:url} }
+   A project / live site may also carry its own `videoUrl` field; the videos file wins if both exist.
+========================================================================= */
+function safeUrl(u){ u = String(u||'').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
+function videoConfig(){ try{ return JSON.parse(localStorage.getItem(DB.VIDEOS)||'{}') || {}; }catch(e){ return {}; } }
+function projectVideoUrl(p){ const c = videoConfig(); return safeUrl((c.projectVideos && c.projectVideos[p.id]) || p.videoUrl); }
+function siteVideoUrl(s){ const c = videoConfig(); return safeUrl((c.siteVideos && c.siteVideos[s.id]) || s.videoUrl); }
+function ytId(u){
+  try{
+    const url = new URL(u); const h = url.hostname.replace(/^(www|m|music)\./,'');
+    let id = '';
+    if(h==='youtu.be') id = url.pathname.slice(1).split('/')[0];
+    else if(h==='youtube.com' || h==='youtube-nocookie.com'){
+      if(url.pathname==='/watch') id = url.searchParams.get('v')||'';
+      else { const m = url.pathname.match(/^\/(shorts|embed|live|v)\/([\w-]{11})/); if(m) id = m[2]; }
+    }
+    return /^[\w-]{11}$/.test(id) ? id : '';
+  }catch(e){ return ''; }
+}
+const PLAY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+function ytThumbImg(url, alt){
+  const id = ytId(url);
+  if(!id) return `<div class="yt-fallback">${PLAY_SVG}</div>`;
+  return `<img src="https://i.ytimg.com/vi/${id}/maxresdefault.jpg" alt="${escapeHtml(alt||'')}" loading="lazy" onerror="if(!this.dataset.f){this.dataset.f=1;this.src='https://i.ytimg.com/vi/${id}/hqdefault.jpg';}">`;
+}
+function watchRowHtml(url){
+  return url ? `<a class="btn btn-watch btn-sm" href="${escapeHtml(url)}" target="_blank" rel="noopener">${PLAY_SVG} Watch now</a>` : '';
+}
+function siteWatchHtml(s){
+  const u = siteVideoUrl(s);
+  return u ? `<span class="btn btn-watch btn-sm" role="button" tabindex="0" data-watch="${escapeHtml(u)}">${PLAY_SVG} Watch now</span>` : '';
+}
+function videoDetailHtml(url, title){
+  if(!url) return '';
+  return `<a class="video-card" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+    <div class="video-thumb">${ytThumbImg(url, title)}<span class="video-play">${PLAY_SVG}</span></div>
+    <div class="video-meta"><b>Watch the video</b><span>Plays on YouTube</span></div>
+  </a>`;
+}
+
+
+/* =========================================================================
    2b. CLOUD SYNC — Google Drive as the shared database
    Every visitor's browser PULLS the shared JSON file (public, read-only,
    via CLOUD_API_KEY — no login needed).
@@ -137,6 +183,17 @@ const CloudSync = {
       if(Array.isArray(data.banners)) localStorage.setItem(DB.BANNERS, JSON.stringify(data.banners));
       return true;
     }catch(e){ console.warn('Cloud pull failed:', e); return false; }
+  },
+
+  async pullVideos(){
+    if(!VIDEOS_FILE_ID || !CLOUD_API_KEY) return false;
+    try{
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${VIDEOS_FILE_ID}?alt=media&key=${CLOUD_API_KEY}`, { cache:'no-store' });
+      if(!res.ok) return false;
+      const data = await res.json();
+      if(data && typeof data==='object') localStorage.setItem(DB.VIDEOS, JSON.stringify(data));
+      return true;
+    }catch(e){ console.warn('Videos pull failed:', e); return false; }
   }
 };
 
@@ -252,7 +309,7 @@ function projectCardHtml(p){
       <div class="project-body">
         <p style="font-size:.83rem;color:var(--text-muted);line-height:1.5;">${escapeHtml(p.shortDesc||'')}</p>
         <div class="project-meta-row"><svg data-lucide="download"></svg> ${(p.downloadCount||0).toLocaleString()} downloads <svg data-lucide="hard-drive" style="margin-left:6px;"></svg> ${escapeHtml(p.fileSize||'—')}</div>
-        <div class="project-card-footer">
+        ${watchRowHtml(projectVideoUrl(p))}<div class="project-card-footer">
           <a href="#/project/${p.slug}" class="btn btn-secondary btn-sm">Details</a>
           ${actionButtonHtml(p, 'sm')}
         </div>
@@ -273,7 +330,7 @@ function projectCardHtml(p){
     </a>
     <div class="project-body">
       <div class="project-meta-row"><svg data-lucide="download"></svg> ${(p.downloadCount||0).toLocaleString()} downloads <svg data-lucide="hard-drive" style="margin-left:6px;"></svg> ${escapeHtml(p.fileSize||'—')}</div>
-      <div class="project-card-footer">
+      ${watchRowHtml(projectVideoUrl(p))}<div class="project-card-footer">
         <a href="#/project/${p.slug}" class="btn btn-secondary btn-sm">Details</a>
         ${actionButtonHtml(p, 'sm')}
       </div>
@@ -384,7 +441,7 @@ function livesiteCardHtml(s, i){
         <span class="ls-badge">${touch ? 'Tap to preview' : 'Hover to preview'}</span></div>
       <h3>${escapeHtml(s.name)}</h3>
       <p>${escapeHtml((s.description||'').split('\n')[0])}</p>
-      <span class="livesite-visit">View details <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
+      ${siteWatchHtml(s)}<span class="livesite-visit">View details <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
     </a>`;
   }
   return `<a class="livesite-card" href="#/live/${s.id}">
@@ -394,7 +451,7 @@ function livesiteCardHtml(s, i){
     <h3>${escapeHtml(s.name)}</h3>
     <p>${escapeHtml(s.description||'')}</p>
     <div class="livesite-url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg> ${escapeHtml(s.url.replace(/^https?:\/\//,''))}</div>
-    <span class="livesite-visit">Visit website <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
+    ${siteWatchHtml(s)}<span class="livesite-visit">Visit website <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M7 7h10v10"/></svg></span>
   </a>`;
 }
 /* Preview scroll speed: duration is calculated from the screenshot height, so tall and
@@ -446,6 +503,96 @@ function renderLiveSitesSection(containerId, limit){
   attachLiveSlideshow(el);
 }
 
+/* =========================================================================
+   YOUTUBE RING — 3D rotating carousel of video thumbnails (home page, below Latest projects)
+========================================================================= */
+const vrState = { raf:0, io:null, ro:null };
+function renderVideoRing(){
+  const section = qs('#home-videos-section'); if(!section) return;
+  if(vrState.raf){ cancelAnimationFrame(vrState.raf); vrState.raf = 0; }
+  if(vrState.io){ vrState.io.disconnect(); vrState.io = null; }
+  if(vrState.ro){ vrState.ro.disconnect(); vrState.ro = null; }
+  const cfg = videoConfig();
+  const items = (Array.isArray(cfg.videos) ? cfg.videos : []).map(v=>({ url: safeUrl(v && v.url), title: (v && v.title) || '' })).filter(v=>v.url).slice(0,8);
+  section.classList.toggle('hidden', items.length===0);
+  const channel = qs('#home-videos-channel'); if(channel) channel.href = safeUrl(cfg.channelUrl) || DataStore.getSettings().youtubeUrl;
+  const host = qs('#home-videos-ring'); if(!host) return;
+  if(!items.length){ host.innerHTML = ''; return; }
+
+  const cardHtml = (v,i,dup)=>`<a class="vr-card" href="${escapeHtml(v.url)}" target="_blank" rel="noopener" ${dup?'aria-hidden="true" tabindex="-1"':''} aria-label="Watch ${escapeHtml(v.title || 'video '+(i+1))} on YouTube">
+      <div class="vr-thumb">${ytThumbImg(v.url, v.title)}<span class="vr-play">${PLAY_SVG}</span></div>
+      <div class="vr-title">${escapeHtml(v.title || 'Watch now on YouTube')}</div></a>`;
+  if(items.length < 3){ host.innerHTML = `<div class="vr-flat">${items.map(cardHtml).join('')}</div>`; return; }
+
+  // With only a few videos the ring's side cards would sit almost edge-on, so the list is repeated
+  // around the ring until there are at least 8 positions (the repeats are hidden from screen readers).
+  const ringItems = []; let pass = 0;
+  while(ringItems.length < 8){ items.forEach((v,i)=> ringItems.push({ v, i, dup: pass>0 })); pass++; }
+  host.innerHTML = `<div class="vr-stage"><div class="vr-ring">${ringItems.map(r=>cardHtml(r.v, r.i, r.dup)).join('')}</div>
+    <button type="button" class="vr-nav prev" aria-label="Previous video"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button type="button" class="vr-nav next" aria-label="Next video"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m9 18 6-6-6-6"/></svg></button></div>`;
+  const stage = qs('.vr-stage', host), ring = qs('.vr-ring', stage), cards = qsa('.vr-card', ring);
+  const N = cards.length, step = 360 / N;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let ang = 0, target = null, pausedUntil = 0, hover = false, visible = true, last = 0, radius = 300, lastW = 0;
+
+  function paint(){
+    ring.style.transform = `translateZ(${-radius}px) rotateY(${ang}deg)`;
+    cards.forEach((c,i)=>{
+      const a = (((i*step + ang) % 360) + 360) % 360;           // 0 = facing the viewer
+      const f = (1 + Math.cos(a * Math.PI / 180)) / 2;
+      c.style.opacity = (0.3 + 0.7 * Math.pow(f, 1.3)).toFixed(3);
+    });
+  }
+  function layout(){
+    const w = stage.clientWidth || 800;
+    const cw = w < 600 ? Math.round(w * 0.58) : Math.round(Math.max(220, Math.min(360, w * 0.34)));
+    const ch = Math.round(cw * 9 / 16);
+    const cardH = ch + 48;                                   // thumbnail + title row
+    radius = Math.round(((cw / 2) / Math.tan(Math.PI / N)) * 1.1 + 20);   // slightly wider than touching so neighbours don't overlap
+    const stageH = Math.round(cardH * 1.25 + 56);
+    stage.style.height = stageH + 'px';
+    ring.style.top = Math.round((stageH - cardH) / 2) + 'px';
+    cards.forEach((c,i)=>{
+      c.style.width = cw + 'px'; c.style.marginLeft = (-cw/2) + 'px';
+      c.style.transform = `rotateY(${i*step}deg) translateZ(${radius}px)`;
+    });
+    paint();
+  }
+  function tick(ts){
+    vrState.raf = requestAnimationFrame(tick);
+    const dt = last ? Math.min(0.05, (ts - last) / 1000) : 0; last = ts;
+    if(!visible) return;
+    if(target !== null){
+      ang += (target - ang) * Math.min(1, dt * 7);
+      if(Math.abs(target - ang) < 0.15){ ang = target; target = null; }
+      paint(); return;
+    }
+    if(!reduce && !hover && ts > pausedUntil){ ang -= 16 * dt; paint(); }   // 16 deg/second
+  }
+  const go = (dir)=>{ target = (target !== null ? target : ang) + dir * step; pausedUntil = performance.now() + 5000; };
+  qs('.vr-nav.next', stage).onclick = ()=> go(-1);
+  qs('.vr-nav.prev', stage).onclick = ()=> go(1);
+  stage.addEventListener('mouseenter', ()=>{ hover = true; });
+  stage.addEventListener('mouseleave', ()=>{ hover = false; });
+  stage.addEventListener('touchstart', ()=>{ pausedUntil = performance.now() + 5000; }, { passive:true });
+  if('IntersectionObserver' in window){ vrState.io = new IntersectionObserver(es=>{ visible = es[0].isIntersecting; }, { threshold:.05 }); vrState.io.observe(stage); }
+  if('ResizeObserver' in window){ vrState.ro = new ResizeObserver(()=>{ const w = stage.clientWidth; if(w !== lastW){ lastW = w; layout(); } }); vrState.ro.observe(stage); }
+  lastW = stage.clientWidth; layout();
+  vrState.raf = requestAnimationFrame(tick);
+}
+
+/* "Watch now" chips sit inside clickable live-site cards, so they are handled here instead of as nested links. */
+function openWatch(el){ const u = el.getAttribute('data-watch'); if(u) window.open(u, '_blank', 'noopener'); }
+document.addEventListener('click', (e)=>{
+  const t = e.target.closest && e.target.closest('[data-watch]');
+  if(!t) return;
+  e.preventDefault(); e.stopPropagation(); openWatch(t);
+}, true);
+document.addEventListener('keydown', (e)=>{
+  if((e.key==='Enter' || e.key===' ') && e.target.matches && e.target.matches('[data-watch]')){ e.preventDefault(); openWatch(e.target); }
+});
+
 function renderHome(){
   const settings = DataStore.getSettings();
   document.title = settings.siteName+' — Websites & Applications Marketplace';
@@ -479,6 +626,7 @@ function renderHome(){
     }
   }
 
+  renderVideoRing();
   refreshIcons();
   wireActionButtons(qs('#home-projects'));
   applyBrandingLinks();
@@ -535,6 +683,7 @@ function renderLiveSiteDetail(id){
         ${heroHtml}
         <div class="eyebrow-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg> Live website</div>
         <h1 style="font-size:1.9rem;">${escapeHtml(s.name)}</h1>
+        <div style="margin-top:16px;max-width:520px;">${videoDetailHtml(siteVideoUrl(s), s.name)}</div>
         <div class="rich-text" style="margin-top:12px;max-width:65ch;">${mdLite(s.description||'')}</div>
       </div>
       <div class="sidebar-card">
@@ -578,6 +727,7 @@ function renderProjectDetail(slug){
           <div class="app-icon" style="width:56px;height:56px;border-radius:14px;background:${categoryGradient(p.category)};flex-shrink:0;">${p.coverImage ? `<img src="${p.coverImage.url}" alt="">` : `<svg data-lucide="smartphone"></svg>`}</div>
           <h1 style="font-size:1.7rem;">${escapeHtml(p.name)}</h1>
         </div>` : `<h1 style="font-size:1.9rem;">${escapeHtml(p.name)}</h1>`}
+        <div style="margin-top:16px;max-width:520px;">${videoDetailHtml(projectVideoUrl(p), p.name)}</div>
         <div class="rich-text" style="margin-top:12px;max-width:65ch;">${mdLite(p.fullDesc||p.shortDesc||'')}</div>
         ${p.features && p.features.length ? `<h3 style="margin-top:28px;margin-bottom:6px;font-size:1.05rem;">What's included</h3><ul class="feature-list">${p.features.map(f=>`<li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> ${escapeHtml(f)}</li>`).join('')}</ul>` : ''}
       </div>
@@ -663,7 +813,7 @@ async function boot(){
   if(booted) return; booted = true;
   const y = qs('#footer-year'); if(y) y.textContent = new Date().getFullYear();
   refreshIcons();
-  await CloudSync.pull(); // fetch the shared Drive database before first render
+  await Promise.all([CloudSync.pull(), CloudSync.pullVideos()]); // fetch the shared Drive database (+ YouTube videos file) before first render
   router();
 }
 window.addEventListener('DOMContentLoaded', boot);
