@@ -1,10 +1,10 @@
 // The Mr JB World — minimal service worker (app-shell caching for installability + basic offline support)
-const CACHE_NAME = 'mjbw-shell-v6';
+const CACHE_NAME = 'mjbw-shell-v10';
 const SHELL_FILES = [
   './',
   './index.html',
-  './style.css?v=12',
-  './script.js?v=12',
+  './style.css?v=16',
+  './script.js?v=16',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
@@ -39,6 +39,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request).catch(() => caches.match('./index.html'))
     );
+    return;
+  }
+
+  if (isSameOrigin && url.pathname.endsWith('/videos.json')) {
+    event.respondWith(fetch(request));   // always fresh, never cached
     return;
   }
 

@@ -1,0 +1,19 @@
+{
+  "channelUrl": "https://www.youtube.com/@themrjbworld",
+
+  "videos": [
+    { "url": "", "title": "" },
+    { "url": "", "title": "" },
+    { "url": "", "title": "" },
+    { "url": "", "title": "" },
+    { "url": "", "title": "" }
+  ],
+
+  "projectVideos": {
+    "Qaza Namaz Tracker": ""
+  },
+
+  "siteVideos": {
+    "Mister JB School Manager": ""
+  }
+}

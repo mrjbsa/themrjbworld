@@ -1,0 +1,25 @@
+==============================================
+   PUBLIC WEBSITE  (sab ko nazar aane wali)
+==============================================
+
+Yeh "The Mr JB World" ki PUBLIC website hai: jo visitors dekhte hain.
+Is mein admin / upload ka kuch nahi hai.
+
+Kaise pehchanein: index.html ka title "The Mr JB World - Websites & Applications Marketplace" hai.
+
+KAHAN UPLOAD KARNA HAI
+  - GitHub (mrjbsa.github.io/themrjbworld)  AUR  Vercel (themrjbworld.vercel.app) dono par.
+  - Is folder ki SAARI files wahan replace karein (sab ek hi jagah, koi sub-folder nahi).
+
+FILES
+  index.html, style.css, script.js   -> website
+  sw.js                              -> app (PWA) ka cache
+  manifest.json + 6 PNG icons        -> PWA / app ke liye
+  videos.json                        -> optional (admin ki Videos tab hi kafi hai)
+  README.md, CLAUDE.md               -> guide / notes (upload karna zaroori nahi)
+
+COUNTER: is website mein ginti ka URL pehle se laga hua hai (script.js ke upar STATS_URL).
+
+UPLOAD KE BAAD: website kholkar Ctrl+Shift+R dabayein.
+Apni visits na ginwane ke liye har browser mein ek dafa kholein:
+  https://mrjbsa.github.io/themrjbworld/?nostats=1

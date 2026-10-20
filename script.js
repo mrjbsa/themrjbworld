@@ -10,11 +10,14 @@ const CLOUD_API_KEY = 'AIzaSyB5xb8ydiKRv0GCu73Hfyw7hPevmoAfeNs'; // public, read
 /* YouTube videos file (separate from the main database so admin saves can never wipe it).
    Create/update it with video-manager.html, then paste its File ID here once. Empty = video features stay hidden. */
 const VIDEOS_FILE_ID = '';
+/* Visit & download counter. Paste the Web app URL of counter-backend.gs here (ends with /exec).
+   Empty = nothing is sent and counts stay as stored in the database. See README.md. */
+const STATS_URL = 'https://script.google.com/macros/s/AKfycbx12Oya3NWCjEYsmAeg4FzT07fdaeZH3Aaa3mzDWB1Gqdh6UU6pVxdVHE_tBPNNY38/exec';
 
 /* =========================================================================
    1. STORAGE KEYS & DEFAULTS
 ========================================================================= */
-const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites', BANNERS:'mjbw_banners', VIDEOS:'mjbw_videos' };
+const DB = { PROJECTS:'mjbw_projects', CATEGORIES:'mjbw_categories', SETTINGS:'mjbw_settings', THEME:'mjbw_theme', LIVE_SITES:'mjbw_live_sites', BANNERS:'mjbw_banners', VIDEOS:'mjbw_videos', STATS:'mjbw_stats' };
 
 const DEFAULT_CATEGORIES = ['Websites','Web Applications','Mobile Apps','Tools & Scripts','Other Projects'];
 
@@ -111,11 +114,71 @@ const DataStore = {
   getProjects(){ return JSON.parse(localStorage.getItem(DB.PROJECTS)||'[]'); },
   getProjectBySlug(slug){ return this.getProjects().find(p=>p.slug===slug)||null; },
   getProjectById(id){ return this.getProjects().find(p=>p.id===id)||null; },
-  incrementDownload(id){ const all=this.getProjects(); const p=all.find(x=>x.id===id); if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); } },
+  incrementDownload(id){ const all=this.getProjects(); const p=all.find(x=>x.id===id); if(p){ p.downloadCount=(p.downloadCount||0)+1; localStorage.setItem(DB.PROJECTS, JSON.stringify(all)); Stats.download(id); } },
   getCategories(){ return JSON.parse(localStorage.getItem(DB.CATEGORIES)||'[]'); },
   getSettings(){ return JSON.parse(localStorage.getItem(DB.SETTINGS)||'{}'); },
   getBanners(){ return JSON.parse(localStorage.getItem(DB.BANNERS)||'[]'); },
   getLiveSites(){ return JSON.parse(localStorage.getItem(DB.LIVE_SITES)||'[]'); }
+};
+
+/* =========================================================================
+   2d. VISIT & DOWNLOAD COUNTER (talks to counter-backend.gs via STATS_URL)
+   - one "visit" per browser session, one "download" per click (repeat clicks are de-duplicated server-side)
+   - per-project download totals are fetched back and shown on cards / detail pages / About
+   - open the site once with ?nostats=1 to stop counting your own visits in that browser (?nostats=0 undoes it)
+========================================================================= */
+const Stats = {
+  enabled(){
+    if(!STATS_URL) return false;
+    try{ if(localStorage.getItem('mjbw_nostats')==='1') return false; }catch(e){}
+    return !/bot|crawl|spider|headless|lighthouse|prerender/i.test(navigator.userAgent || '');
+  },
+  vid(){
+    let v = '', isNew = false;
+    try{ v = localStorage.getItem('mjbw_vid') || ''; }catch(e){}
+    if(!v){
+      v = ((window.crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g,'') : (Math.random().toString(36).slice(2) + Date.now().toString(36))).slice(0, 24);
+      try{ localStorage.setItem('mjbw_vid', v); }catch(e){}
+      isNew = true;
+    }
+    return { v, isNew };
+  },
+  url(q){ return STATS_URL + (STATS_URL.indexOf('?') > -1 ? '&' : '?') + q; },
+  ping(params){
+    try{ fetch(this.url(new URLSearchParams(Object.assign({ action:'hit' }, params)).toString()), { mode:'no-cors', keepalive:true, cache:'no-store' }).catch(()=>{}); }catch(e){}
+  },
+  visit(){
+    if(!this.enabled()) return;
+    try{ if(sessionStorage.getItem('mjbw_visit_sent')) return; sessionStorage.setItem('mjbw_visit_sent','1'); }catch(e){}
+    const id = this.vid();
+    this.ping({ type:'visit', vid:id.v, 'new': id.isNew ? '1' : '0' });
+  },
+  download(projectId){
+    if(!this.enabled()) return;
+    this.ping({ type:'download', id:projectId, vid:this.vid().v });
+  },
+  cached(){ try{ return JSON.parse(localStorage.getItem(DB.STATS) || '{}') || {}; }catch(e){ return {}; } },
+  /* copy the server's per-project totals onto this browser's copy of the projects (display only) */
+  apply(){
+    const d = this.cached().downloads; if(!d) return false;
+    const all = DataStore.getProjects(); let changed = false;
+    all.forEach(p=>{ if(d[p.id] != null && p.downloadCount !== d[p.id]){ p.downloadCount = d[p.id]; changed = true; } });
+    if(changed) localStorage.setItem(DB.PROJECTS, JSON.stringify(all));
+    return changed;
+  },
+  async refresh(){
+    if(!STATS_URL) return false;
+    try{
+      const r = await fetch(this.url('action=downloads&t=' + Date.now()), { cache:'no-store' });
+      const j = await r.json();
+      if(j && j.ok && j.downloads){
+        const before = JSON.stringify(this.cached().downloads || {});
+        localStorage.setItem(DB.STATS, JSON.stringify({ downloads:j.downloads }));
+        if(before !== JSON.stringify(j.downloads)) return this.apply();
+      }
+    }catch(e){}
+    return false;
+  }
 };
 
 
@@ -125,9 +188,26 @@ const DataStore = {
    A project / live site may also carry its own `videoUrl` field; the videos file wins if both exist.
 ========================================================================= */
 function safeUrl(u){ u = String(u||'').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
-function videoConfig(){ try{ return JSON.parse(localStorage.getItem(DB.VIDEOS)||'{}') || {}; }catch(e){ return {}; } }
-function projectVideoUrl(p){ const c = videoConfig(); return safeUrl((c.projectVideos && c.projectVideos[p.id]) || p.videoUrl); }
-function siteVideoUrl(s){ const c = videoConfig(); return safeUrl((c.siteVideos && c.siteVideos[s.id]) || s.videoUrl); }
+/* Preview without any setup: open the site with ?videodemo=1 to see the ring and buttons with sample items. */
+const VIDEO_DEMO = /[?&]videodemo(=|&|$)/.test(location.search);
+const DEMO_VIDEO_CONFIG = {
+  channelUrl: 'https://www.youtube.com/@themrjbworld',
+  videos: [1,2,3,4,5].map(i=>({ url:'https://www.youtube.com/@themrjbworld', title:'Demo video '+i })),
+  projectVideos: {}, siteVideos: {}, demoAll: true
+};
+function videoConfig(){
+  if(VIDEO_DEMO) return DEMO_VIDEO_CONFIG;
+  try{ return JSON.parse(localStorage.getItem(DB.VIDEOS)||'{}') || {}; }catch(e){ return {}; }
+}
+/* A link can be attached by project/site id, slug or name (case-insensitive) — names are the easy way in videos.json. */
+function lookupVideo(map, item){
+  if(!map || typeof map !== 'object') return '';
+  const want = [item.id, item.slug, item.name].filter(Boolean).map(x=>String(x).trim().toLowerCase());
+  for(const k of Object.keys(map)){ if(want.includes(String(k).trim().toLowerCase())) return map[k]; }
+  return '';
+}
+function projectVideoUrl(p){ const c = videoConfig(); return safeUrl(lookupVideo(c.projectVideos, p) || (c.demoAll ? c.channelUrl : '') || p.videoUrl); }
+function siteVideoUrl(s){ const c = videoConfig(); return safeUrl(lookupVideo(c.siteVideos, s) || (c.demoAll ? c.channelUrl : '') || s.videoUrl); }
 function ytId(u){
   try{
     const url = new URL(u); const h = url.hostname.replace(/^(www|m|music)\./,'');
@@ -168,6 +248,7 @@ function videoDetailHtml(url, title){
    via CLOUD_API_KEY — no login needed).
 ========================================================================= */
 const CloudSync = {
+  hasVideoConfig: false,
   getFileId(){ return CLOUD_DB_FILE_ID || ''; },
 
   async pull(){
@@ -181,19 +262,25 @@ const CloudSync = {
       if(Array.isArray(data.categories) && data.categories.length) localStorage.setItem(DB.CATEGORIES, JSON.stringify(data.categories));
       if(Array.isArray(data.liveSites)) localStorage.setItem(DB.LIVE_SITES, JSON.stringify(data.liveSites));
       if(Array.isArray(data.banners)) localStorage.setItem(DB.BANNERS, JSON.stringify(data.banners));
+      if(data.videoConfig && typeof data.videoConfig==='object'){ localStorage.setItem(DB.VIDEOS, JSON.stringify(data.videoConfig)); this.hasVideoConfig = true; }  // saved from the admin's Videos tab
       return true;
     }catch(e){ console.warn('Cloud pull failed:', e); return false; }
   },
 
   async pullVideos(){
-    if(!VIDEOS_FILE_ID || !CLOUD_API_KEY) return false;
+    // 1) Google Drive videos file (written by video-manager.html), when VIDEOS_FILE_ID is set
+    if(VIDEOS_FILE_ID && CLOUD_API_KEY){
+      try{
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${VIDEOS_FILE_ID}?alt=media&key=${CLOUD_API_KEY}`, { cache:'no-store' });
+        if(res.ok){ const data = await res.json(); if(data && typeof data==='object'){ localStorage.setItem(DB.VIDEOS, JSON.stringify(data)); return true; } }
+      }catch(e){ console.warn('Videos (Drive) pull failed:', e); }
+    }
+    // 2) videos.json next to index.html — edit it by hand, no Google setup needed
     try{
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${VIDEOS_FILE_ID}?alt=media&key=${CLOUD_API_KEY}`, { cache:'no-store' });
-      if(!res.ok) return false;
-      const data = await res.json();
-      if(data && typeof data==='object') localStorage.setItem(DB.VIDEOS, JSON.stringify(data));
-      return true;
-    }catch(e){ console.warn('Videos pull failed:', e); return false; }
+      const res = await fetch('videos.json', { cache:'no-store' });
+      if(res.ok){ const data = await res.json(); if(data && typeof data==='object'){ localStorage.setItem(DB.VIDEOS, JSON.stringify(data)); return true; } }
+    }catch(e){ /* file missing or invalid JSON: keep whatever was cached */ }
+    return false;
   }
 };
 
@@ -813,8 +900,16 @@ async function boot(){
   if(booted) return; booted = true;
   const y = qs('#footer-year'); if(y) y.textContent = new Date().getFullYear();
   refreshIcons();
-  await Promise.all([CloudSync.pull(), CloudSync.pullVideos()]); // fetch the shared Drive database (+ YouTube videos file) before first render
+  try{
+    const q = location.search.match(/[?&]nostats=([^&]*)/);
+    if(q){ if(q[1]==='0') localStorage.removeItem('mjbw_nostats'); else localStorage.setItem('mjbw_nostats','1'); }
+  }catch(e){}
+  await CloudSync.pull();                                  // shared Drive database (includes the admin's video settings)
+  if(!CloudSync.hasVideoConfig) await CloudSync.pullVideos(); // otherwise fall back to the Drive videos file / videos.json
+  Stats.apply();                                           // last known per-project download totals (instant)
   router();
+  Stats.visit();
+  Stats.refresh().then(changed=>{ if(changed) router(); }); // fresher totals arrive a moment later
 }
 window.addEventListener('DOMContentLoaded', boot);
 if(document.readyState !== 'loading'){ boot(); }
